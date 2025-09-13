@@ -17,10 +17,10 @@ class RandomDataSource(DataSource):
 
 
 class PeakDetector:
-    def __init__(self, data_souce: DataSource) -> None:
+    def __init__(self, data_source: DataSource) -> None:
         self.window_length = 10
         self.window = [float() for _ in range(self.window_length)]
-        self.data_source = data_souce
+        self.data_source = data_source
 
     async def run(self) -> None:
         while True:
