@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import keyboard
 import random
 import asyncio
-from quart import Quart, request, jsonify
+from quart import Quart, request, jsonify, send_file
 import threading
 import logging
 from hypercorn.config import Config
@@ -27,6 +27,10 @@ class HTTPDataSource(DataSource):
         self.data_queue = asyncio.Queue()
         self.server_started = False
 
+        @self.app.route('/')
+        async def serve_client():
+            return await send_file('http_client.html')
+
         @self.app.route('/data', methods=['POST'])
         async def handle_data():
             try:
@@ -40,7 +44,7 @@ class HTTPDataSource(DataSource):
     async def _start_server(self):
         if not self.server_started:
             self.server_started = True
-            print(f'HTTPDataSource listening on http://0.0.0.0:{self.port}/data')
+            print(f'HTTPDataSource listening on http://0.0.0.0:{self.port}/')
             cfg = Config()
             cfg.bind = [f"0.0.0.0:{self.port}"]
             cfg.loglevel = "error"
