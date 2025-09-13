@@ -2,7 +2,11 @@ from abc import ABC, abstractmethod
 import keyboard
 import random
 import asyncio
-
+from quart import Quart, request, jsonify
+import threading
+import logging
+from hypercorn.config import Config
+from hypercorn.asyncio import serve
 
 class DataSource(ABC):
     @abstractmethod
@@ -14,6 +18,38 @@ class RandomDataSource(DataSource):
     async def read(self) -> float:
         await asyncio.sleep(0.05)
         return random.random() * (2 if random.random() < 0.02 else 0.1)
+
+
+class HTTPDataSource(DataSource):
+    def __init__(self, port: int = 8000) -> None:
+        self.port = port
+        self.app = Quart(__name__)
+        self.data_queue = asyncio.Queue()
+        self.server_started = False
+
+        @self.app.route('/data', methods=['POST'])
+        async def handle_data():
+            try:
+                json_data = await request.get_json()
+                value = float(json_data)
+                await self.data_queue.put(value)
+                return jsonify({'status': 'success'})
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid JSON or non-numeric value'}), 400
+
+    async def _start_server(self):
+        if not self.server_started:
+            self.server_started = True
+            print(f'HTTPDataSource listening on http://0.0.0.0:{self.port}/data')
+            cfg = Config()
+            cfg.bind = [f"0.0.0.0:{self.port}"]
+            cfg.loglevel = "error"
+            await serve(self.app, cfg)
+
+    async def read(self) -> float:
+        if not self.server_started:
+            asyncio.create_task(self._start_server())
+        return await self.data_queue.get()
 
 class PeakDetector:
     def __init__(self, data_source: DataSource) -> None:
@@ -43,4 +79,4 @@ class PeakDetector:
 
 
 if __name__ == '__main__':
-    asyncio.run(PeakDetector(RandomDataSource()).run())
+    asyncio.run(PeakDetector(HTTPDataSource()).run())
