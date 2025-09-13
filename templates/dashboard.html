@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HackMIT Acceleration Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #2c3e50;
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        .button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            background: #3498db;
+            color: white;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .button.stop {
+            background: #e74c3c;
+        }
+        .graphs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .graph {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="number"] {
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            width: 80px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 HackMIT Acceleration Dashboard</h1>
+            <p>Real-time 3-axis acceleration monitoring with async peak detection</p>
+        </div>
+        
+        <div class="controls">
+            <button id="startBtn" class="button" onclick="startDataCollection()">▶️ Start</button>
+            <button id="stopBtn" class="button stop" onclick="stopDataCollection()">⏹️ Stop</button>
+            <button class="button" onclick="clearData()" style="background: #f39c12;">🗑️ Clear</button>
+            <div class="control-group">
+                <label>Peak Threshold:</label>
+                <input type="number" id="peakThreshold" value="1.5" min="0.1" max="5.0" step="0.1" onchange="updatePeakThreshold()">
+                <span>m/s²</span>
+            </div>
+        </div>
+        
+        <div class="graphs">
+            <div class="graph">
+                <div id="magnitudeGraph" style="height: 300px;"></div>
+            </div>
+            <div class="graph">
+                <div id="axisGraph" style="height: 300px;"></div>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="totalPoints">0</div>
+                <div class="stat-label">Total Data Points</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="currentMagnitude">0.0</div>
+                <div class="stat-label">Current Magnitude (m/s²)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avgMagnitude">0.0</div>
+                <div class="stat-label">Average Magnitude (m/s²)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="detectedPeaks">0</div>
+                <div class="stat-label">Detected Peaks</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isRunning = false;
+        let updateInterval = null;
+        
+        // Initialize graphs
+        function initializeGraphs() {
+            // Magnitude graph
+            Plotly.newPlot('magnitudeGraph', [{
+                x: [],
+                y: [],
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#9b59b6', width: 2 },
+                name: 'Magnitude'
+            }], {
+                title: 'Acceleration Magnitude',
+                xaxis: { title: 'Time (s)' },
+                yaxis: { title: 'Magnitude (m/s²)' },
+                margin: { l: 50, r: 20, t: 40, b: 40 }
+            });
+            
+            // 3-axis graph
+            Plotly.newPlot('axisGraph', [{
+                x: [],
+                y: [],
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#e74c3c', width: 2 },
+                name: 'X-axis'
+            }, {
+                x: [],
+                y: [],
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#27ae60', width: 2 },
+                name: 'Y-axis'
+            }, {
+                x: [],
+                y: [],
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#3498db', width: 2 },
+                name: 'Z-axis'
+            }], {
+                title: '3-Axis Acceleration',
+                xaxis: { title: 'Time (s)' },
+                yaxis: { title: 'Acceleration (m/s²)' },
+                margin: { l: 50, r: 20, t: 40, b: 40 }
+            });
+        }
+        
+        async function updateGraphs() {
+            try {
+                const response = await fetch('/api/data/history?limit=100');
+                const data = await response.json();
+                
+                if (data.length > 0) {
+                    const timestamps = data.map(d => d.timestamp);
+                    const magnitudes = data.map(d => d.magnitude || 0);
+                    const ax = data.map(d => d.ax);
+                    const ay = data.map(d => d.ay);
+                    const az = data.map(d => d.az);
+                    
+                    // Update magnitude graph
+                    Plotly.restyle('magnitudeGraph', {
+                        x: [timestamps],
+                        y: [magnitudes]
+                    });
+                    
+                    // Update axis graph
+                    Plotly.restyle('axisGraph', {
+                        x: [timestamps, timestamps, timestamps],
+                        y: [ax, ay, az]
+                    });
+                    
+                    // Add peak annotations
+                    const peaksResponse = await fetch('/api/peaks');
+                    const peaks = await peaksResponse.json();
+                    
+                    if (peaks.length > 0) {
+                        const recentPeaks = peaks.filter(p => timestamps.includes(p.timestamp));
+                        const annotations = recentPeaks.map(peak => ({
+                            x: peak.timestamp,
+                            y: peak.magnitude,
+                            text: `Peak: ${peak.magnitude.toFixed(2)}`,
+                            showarrow: true,
+                            arrowhead: 2,
+                            arrowcolor: '#e74c3c',
+                            bgcolor: 'rgba(255,255,255,0.8)',
+                            bordercolor: '#e74c3c'
+                        }));
+                        
+                        Plotly.relayout('magnitudeGraph', { annotations: annotations });
+                    }
+                }
+                
+                // Update statistics
+                const statsResponse = await fetch('/api/stats');
+                const stats = await statsResponse.json();
+                
+                if (!stats.error) {
+                    document.getElementById('totalPoints').textContent = stats.total_points;
+                    document.getElementById('currentMagnitude').textContent = stats.current_magnitude.toFixed(2);
+                    document.getElementById('avgMagnitude').textContent = stats.avg_magnitude.toFixed(2);
+                    document.getElementById('detectedPeaks').textContent = stats.detected_peaks;
+                }
+                
+            } catch (error) {
+                console.error('Error updating graphs:', error);
+            }
+        }
+        
+        async function startDataCollection() {
+            try {
+                await fetch('/api/control/start', { method: 'POST' });
+                isRunning = true;
+                updateInterval = setInterval(updateGraphs, 500);
+                document.getElementById('startBtn').style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'inline-block';
+            } catch (error) {
+                console.error('Error starting data collection:', error);
+            }
+        }
+        
+        async function stopDataCollection() {
+            try {
+                await fetch('/api/control/stop', { method: 'POST' });
+                isRunning = false;
+                if (updateInterval) {
+                    clearInterval(updateInterval);
+                }
+                document.getElementById('startBtn').style.display = 'inline-block';
+                document.getElementById('stopBtn').style.display = 'none';
+            } catch (error) {
+                console.error('Error stopping data collection:', error);
+            }
+        }
+        
+        async function clearData() {
+            try {
+                await fetch('/api/data/clear', { method: 'POST' });
+                // Clear graphs
+                Plotly.restyle('magnitudeGraph', { x: [[]], y: [[]] });
+                Plotly.restyle('axisGraph', { x: [[], [], []], y: [[], [], []] });
+                Plotly.relayout('magnitudeGraph', { annotations: [] });
+                alert('Data cleared successfully!');
+            } catch (error) {
+                console.error('Error clearing data:', error);
+            }
+        }
+        
+        async function updatePeakThreshold() {
+            const threshold = document.getElementById('peakThreshold').value;
+            try {
+                await fetch('/api/config/peak_threshold', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ threshold: parseFloat(threshold) })
+                });
+            } catch (error) {
+                console.error('Error updating peak threshold:', error);
+            }
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeGraphs();
+        });
+    </script>
+</body>
+</html>
