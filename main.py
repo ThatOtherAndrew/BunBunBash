@@ -6,19 +6,19 @@ import asyncio
 
 class DataSource(ABC):
     @abstractmethod
-    async def read(self) -> list[float]:
-        ...
+    async def read(self) -> float:
+        pass
 
 
 class RandomDataSource(DataSource):
-    async def read(self) -> list[float]:
-        await asyncio.sleep(0.1)
-        return [random.random() * (2 if random.random() < 0.02 else 0.1)]
-
+    async def read(self) -> float:
+        await asyncio.sleep(0.05)
+        return random.random() * (2 if random.random() < 0.02 else 0.1)
 
 class PeakDetector:
     def __init__(self, data_source: DataSource) -> None:
-        self.window_length = 10
+        self.sensitivity = 0.3
+        self.window_length = 16
         self.window = [float() for _ in range(self.window_length)]
         self.data_source = data_source
 
@@ -26,16 +26,20 @@ class PeakDetector:
         while True:
             await self.tick()
 
-    async def tick(self) -> list[float]:
-        self.window.extend(await self.data_source.read())
-        self.window = self.window[-self.window_length:]
-        print(' '.join(f'{x:.1f}' for x in self.window), end='\r')
-        return self.window
+    async def tick(self) -> float:
+        new_sample = await self.data_source.read()
+        if new_sample > self.sensitivity:
+            print(f'\n{new_sample}', end=' ')
+            self.on_peak()
+        self.window.append(await self.data_source.read())
+        self.window.pop(0)
+
+        print(' '.join(f'{x:.2f}' for x in self.window), end='\r')
+        return new_sample
 
     @staticmethod
     def on_peak():
-        print('space')
-        keyboard.press_and_release('space')
+        print('peak')
 
 
 if __name__ == '__main__':
