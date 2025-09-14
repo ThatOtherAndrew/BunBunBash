@@ -3,105 +3,8 @@ let gameState = {
     running: false,
     paused: false,
     score: 0,
-    dataBuffer: [],
     lastDataTime: 0
 };
-
-// Data handling
-class DataHandler {
-    constructor() {
-        this.buffer = [];
-        this.maxBufferSize = 100;
-        this.dataCallbacks = [];
-    }
-
-    // Simulate HTTP data fetching
-    async fetchData() {
-        try {
-            // Replace with your actual HTTP endpoint
-            // const response = await fetch('/api/data');
-            // const data = await response.json();
-            
-            // Simulated data for demo
-            const data = {
-                value: Math.sin(Date.now() / 1000) + Math.random() * 0.5,
-                timestamp: Date.now()
-            };
-            
-            this.addData(data);
-            return data;
-        } catch (error) {
-            console.error('Data fetch error:', error);
-            return null;
-        }
-    }
-
-    addData(dataPoint) {
-        this.buffer.push(dataPoint);
-        if (this.buffer.length > this.maxBufferSize) {
-            this.buffer.shift();
-        }
-        
-        // Notify callbacks
-        this.dataCallbacks.forEach(callback => callback(dataPoint));
-        
-        // Update displays
-        this.updateDataDisplay(dataPoint);
-        this.updateWaveVisualization();
-    }
-
-    updateDataDisplay(dataPoint) {
-        document.getElementById('current-value').textContent = 
-            `Value: ${dataPoint.value.toFixed(3)}`;
-        document.getElementById('connection-status').textContent = 
-            'Connected';
-    }
-
-    updateWaveVisualization() {
-        const svg = document.getElementById('header-wave');
-        const path = document.getElementById('wave-path');
-        const points = document.getElementById('wave-points');
-        
-        if (this.buffer.length < 2) return;
-        
-        const width = 300;
-        const height = 100;
-        const stepX = width / (this.buffer.length - 1);
-        
-        // Create path
-        let pathData = '';
-        this.buffer.forEach((point, i) => {
-            const x = i * stepX;
-            const y = height/2 + point.value * 20; // Scale the data
-            
-            if (i === 0) {
-                pathData += `M ${x} ${y}`;
-            } else {
-                pathData += ` L ${x} ${y}`;
-            }
-        });
-        
-        path.setAttribute('d', pathData);
-        
-        // Add points for recent peaks
-        points.innerHTML = '';
-        this.buffer.slice(-5).forEach((point, i) => {
-            if (Math.abs(point.value) > 0.8) { // Peak threshold
-                const x = (this.buffer.length - 5 + i) * stepX;
-                const y = height/2 + point.value * 20;
-                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                circle.setAttribute('cx', x);
-                circle.setAttribute('cy', y);
-                circle.setAttribute('r', 3);
-                points.appendChild(circle);
-            }
-        });
-    }
-
-    onData(callback) {
-        this.dataCallbacks.push(callback);
-    }
-}
 
 // Game logic
 class Game {
@@ -111,19 +14,21 @@ class Game {
         this.player = { x: 50, y: 300, width: 20, height: 20, dy: 0, grounded: true };
         this.obstacles = [];
         this.animationId = null;
+        this.obstacleSpawnTimer = 0;
+        this.obstacleSpawnRate = 120; // Spawn obstacle every 120 frames (2 seconds at 60fps)
     }
 
     start() {
         gameState.running = true;
         gameState.paused = false;
-        document.getElementById('game-status').textContent = 'Running';
+        document.getElementById('game-status').textContent = 'Running - Press SPACEBAR to jump!';
         this.gameLoop();
     }
 
     pause() {
         gameState.paused = !gameState.paused;
         document.getElementById('game-status').textContent = 
-            gameState.paused ? 'Paused' : 'Running';
+            gameState.paused ? 'Paused' : 'Running - Press SPACEBAR to jump!';
     }
 
     reset() {
@@ -132,6 +37,7 @@ class Game {
         gameState.score = 0;
         this.player = { x: 50, y: 300, width: 20, height: 20, dy: 0, grounded: true };
         this.obstacles = [];
+        this.obstacleSpawnTimer = 0;
         document.getElementById('game-status').textContent = 'Press Start to begin';
         
         if (this.animationId) {
@@ -141,21 +47,11 @@ class Game {
         this.draw();
     }
 
-    handleDataPoint(dataPoint) {
-        // Jump when data exceeds threshold
-        if (Math.abs(dataPoint.value) > 0.8 && this.player.grounded) {
+    jump() {
+        // Jump only if player is grounded and game is running
+        if (this.player.grounded && gameState.running && !gameState.paused) {
             this.player.dy = -15; // Jump velocity
             this.player.grounded = false;
-        }
-        
-        // Add obstacles based on data
-        if (Math.random() < Math.abs(dataPoint.value) * 0.3) {
-            this.obstacles.push({
-                x: this.canvas.width,
-                y: 350,
-                width: 20,
-                height: 30
-            });
         }
     }
 
@@ -171,6 +67,23 @@ class Game {
             this.player.y = 300;
             this.player.dy = 0;
             this.player.grounded = true;
+        }
+        
+        // Spawn obstacles periodically
+        this.obstacleSpawnTimer++;
+        if (this.obstacleSpawnTimer >= this.obstacleSpawnRate) {
+            this.obstacles.push({
+                x: this.canvas.width,
+                y: 290, // Move up to sit on the ground line (320 - 30 = 290)
+                width: 20,
+                height: 30
+            });
+            this.obstacleSpawnTimer = 0;
+            
+            // Gradually increase difficulty by decreasing spawn rate
+            if (this.obstacleSpawnRate > 60) {
+                this.obstacleSpawnRate -= 0.5;
+            }
         }
         
         // Update obstacles
@@ -199,7 +112,7 @@ class Game {
 
     gameOver() {
         gameState.running = false;
-        document.getElementById('game-status').textContent = `Game Over! Score: ${gameState.score}`;
+        document.getElementById('game-status').textContent = `Game Over! Score: ${gameState.score} - Press Reset to play again`;
     }
 
     draw() {
@@ -211,7 +124,7 @@ class Game {
         this.ctx.fillStyle = '#333';
         this.ctx.fillRect(0, 320, this.canvas.width, 2);
         
-        // Draw player
+        // Draw player (simple rectangle dinosaur)
         this.ctx.fillStyle = '#333';
         this.ctx.fillRect(this.player.x, this.player.y, this.player.width, this.player.height);
         
@@ -225,6 +138,13 @@ class Game {
         this.ctx.fillStyle = '#333';
         this.ctx.font = '16px Arial';
         this.ctx.fillText(`Score: ${gameState.score}`, 10, 30);
+        
+        // Draw instructions when not running
+        if (!gameState.running && !gameState.paused) {
+            this.ctx.fillStyle = '#666';
+            this.ctx.font = '14px Arial';
+            this.ctx.fillText('Press Start, then use SPACEBAR to jump over obstacles', 200, 200);
+        }
     }
 
     gameLoop() {
@@ -241,31 +161,19 @@ class Game {
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('game-canvas');
     const game = new Game(canvas);
-    const dataHandler = new DataHandler();
-    
-    // Connect data to game
-    dataHandler.onData(dataPoint => game.handleDataPoint(dataPoint));
     
     // Controls
     document.getElementById('start-btn').addEventListener('click', () => game.start());
     document.getElementById('pause-btn').addEventListener('click', () => game.pause());
     document.getElementById('reset-btn').addEventListener('click', () => game.reset());
     
-    // Keyboard controls
+    // Keyboard controls - spacebar to jump
     document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' && game.player.grounded) {
-            game.player.dy = -15;
-            game.player.grounded = false;
-            e.preventDefault();
+        if (e.code === 'Space') {
+            game.jump();
+            e.preventDefault(); // Prevent page scrolling
         }
     });
-    
-    // Start data fetching
-    setInterval(() => {
-        if (gameState.running) {
-            dataHandler.fetchData();
-        }
-    }, 100); // Fetch every 100ms
     
     // Initial draw
     game.draw();

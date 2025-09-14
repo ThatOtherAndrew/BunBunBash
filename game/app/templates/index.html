@@ -10,49 +10,34 @@
     <!-- Header with navigation and wave visualization -->
     <header class="header">
         <nav class="nav">
-            <a href="#" id="home-link">home</a>
-            <span>|</span>
-            <a href="#" id="menu-link">games</a>
+            <a href="#" id="home-link" style="font-size: 40px">Bun</a>
+            <span></span>
+            <a href="#" id="home-link" style="font-size: 40px">Bun</a>
+            <span></span>
+            <a href="#" id="menu-link" style="font-size: 40px">Bash</a>
         </nav>
-        
-        <!-- Wave visualization in header -->
-        <div class="wave-container">
-            <svg width="300" height="100" id="header-wave">
-                <path class="wave-line" id="wave-path" d=""></path>
-                <g class="wave-points" id="wave-points"></g>
-            </svg>
-        </div>
     </header>
 
-    <!-- Data display -->
-    <div class="data-display" id="data-display">
-        <div><strong>Data Feed:</strong></div>
-        <div id="current-value">Waiting...</div>
-        <div id="data-rate">Rate: 0 Hz</div>
-        <div id="connection-status">Disconnected</div>
-    </div>
-
     <!-- Main content -->
-    <main class="main-content">
-        <h1 class="game-title">game</h1>
-        
+    <main class="main-content">        
         <!-- Game area -->
         <div class="game-container">
-            <canvas class="game-canvas" id="game-canvas" width="800" height="400"></canvas>
-        </div>
-        
-        <!-- Controls -->
-        <div class="controls">
-            <button class="btn" id="start-btn">Start</button>
-            <button class="btn" id="pause-btn">Pause</button>
-            <button class="btn" id="reset-btn">Reset</button>
-        </div>
-        
-        <!-- Status -->
-        <div class="status" id="game-status">
-            Press Start to begin
+            <canvas class="game-canvas" id="game-canvas"></canvas>
+            
+            <!-- Controls overlay -->
+            <div class="controls-overlay">
+                <button class="btn-image" id="start-btn" title="Start Game">
+                    <img src="{{ url_for('static', filename='images/start-button.png') }}" alt="Start" class="btn-icon">
+                </button>
+                <button class="btn-image" id="pause-btn" title="Pause Game">
+                    <img src="{{ url_for('static', filename='images/pause-button.png') }}" alt="Pause" class="btn-icon">
+                </button>
+                <button class="btn-image" id="reset-btn" title="Reset Game">
+                    <img src="{{ url_for('static', filename='images/reset-button.png') }}" alt="Reset" class="btn-icon">
+                </button>
+            </div>
         </div>
     </main>
-    <script src="{{ url_for('static', filename='game-files/dinosaur.js') }}"></script>
+    <script src="{{ url_for('static', filename='game-files/whackabunny.js') }}"></script>
 </body>
 </html>
