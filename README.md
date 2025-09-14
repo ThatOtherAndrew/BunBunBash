@@ -2,6 +2,8 @@
 
 A real-world whack-a-mole style game using phone accelerometers as input devices.
 
+![BunBunBash!](./banner.jpg)
+
 ## Inspiration
 
 We wanted to make something fun. We spend lots of time on our phones and computers, but it's rare that those devices interact with the world; they're typically confined to a keyboard and a screen. We wanted a way to interact with music, games, websites, and all sorts of experiences with a simple setup based in the real world.
