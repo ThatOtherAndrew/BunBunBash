@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import keyboard
 import random
 import asyncio
-from quart import Quart, send_file
+from quart import Quart, send_file, request, jsonify
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 import socketio
@@ -23,13 +23,14 @@ class RandomDataSource(DataSource):
 
 
 class HTTPDataSource(DataSource):
-    def __init__(self, port: int = 8000) -> None:
+    def __init__(self, port: int = 8000, peak_detector=None) -> None:
         self.port = port
         self.app = Quart(__name__)
         self.data_queue = asyncio.Queue()
         self.server_started = False
         # {sid: key (A, B, C)}
         self.clients = {}
+        self.peak_detector = peak_detector
 
         self.sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins="*")
         self.socket_app = socketio.ASGIApp(self.sio, self.app)
@@ -37,6 +38,34 @@ class HTTPDataSource(DataSource):
         @self.app.route('/')
         async def serve_client():
             return await send_file('http_client.html')
+
+        @self.app.route('/settings', methods=['POST'])
+        async def update_settings():
+            if not self.peak_detector:
+                return jsonify({'error': 'Peak detector not configured'}), 400
+
+            data = await request.get_json()
+            if not data:
+                return jsonify({'error': 'No JSON data provided'}), 400
+
+            # Update threshold if provided
+            if 'threshold' in data:
+                try:
+                    self.peak_detector.threshold = float(data['threshold'])
+                except (ValueError, TypeError):
+                    return jsonify({'error': 'Invalid threshold value'}), 400
+
+            # Update debounce_samples if provided
+            if 'debounce_samples' in data:
+                try:
+                    self.peak_detector.debounce_samples = int(data['debounce_samples'])
+                except (ValueError, TypeError):
+                    return jsonify({'error': 'Invalid debounce_samples value'}), 400
+
+            return jsonify({
+                'threshold': self.peak_detector.threshold,
+                'debounce_samples': self.peak_detector.debounce_samples
+            })
 
         @self.sio.event
         async def connect(sid, environ):
@@ -46,7 +75,7 @@ class HTTPDataSource(DataSource):
         async def disconnect(sid):
             print(f'Client {sid} disconnected')
             del self.clients[sid]
-        
+
         @self.sio.event
         async def key(sid, key):
             self.clients[sid] = key
@@ -82,31 +111,11 @@ class HTTPDataSource(DataSource):
         return await self.data_queue.get()
 
 class PeakDetector:
-    def __init__(self, data_source: DataSource) -> None:
+    def __init__(self, data_source: DataSource, threshold: float = 0.5, debounce_samples: int = 10) -> None:
         self.data_source = data_source
-
-        # Configuration parameters
-        self.window_length = 32
-        self.baseline_window_length = 64
-        self.threshold_multiplier = 1.5
-        self.min_peak_height = 0.1
-        self.debounce_samples = 6
-        self.smoothing_factor = 0.15
-        self.variance_window_length = 32
-
-        # Per-device state tracking
-        self.device_states = {}
-
-    def _init_device_state(self, key: str) -> None:
-        """Initialize state for a new device"""
-        if key not in self.device_states:
-            self.device_states[key] = {
-                'window': [0.0 for _ in range(self.window_length)],
-                'baseline_window': [0.0 for _ in range(self.baseline_window_length)],
-                'variance_window': [0.0 for _ in range(self.variance_window_length)],
-                'samples_since_peak': self.debounce_samples,
-                'smoothed_value': 0.0
-            }
+        self.threshold = threshold
+        self.debounce_samples = debounce_samples
+        self.samples_since_peak = {}
 
     async def run(self) -> None:
         while True:
@@ -115,44 +124,15 @@ class PeakDetector:
     async def tick(self) -> float:
         (new_sample, key) = await self.data_source.read()
 
-        # Initialize device state if needed
-        self._init_device_state(key)
-        device_state = self.device_states[key]
+        # Initialize counter for new devices
+        if key not in self.samples_since_peak:
+            self.samples_since_peak[key] = self.debounce_samples
 
-        # Update smoothed value for this device
-        device_state['smoothed_value'] = (self.smoothing_factor * new_sample +
-                                        (1 - self.smoothing_factor) * device_state['smoothed_value'])
+        self.samples_since_peak[key] += 1
 
-        # Update windows for this device
-        device_state['window'].append(device_state['smoothed_value'])
-        device_state['window'].pop(0)
-
-        device_state['baseline_window'].append(device_state['smoothed_value'])
-        device_state['baseline_window'].pop(0)
-
-        device_state['variance_window'].append(device_state['smoothed_value'])
-        device_state['variance_window'].pop(0)
-
-        # Calculate thresholds for this device
-        baseline = sum(device_state['baseline_window']) / len(device_state['baseline_window'])
-
-        variance_mean = sum(device_state['variance_window']) / len(device_state['variance_window'])
-        variance = sum((x - variance_mean) ** 2 for x in device_state['variance_window']) / len(device_state['variance_window'])
-        std_dev = variance ** 0.5
-
-        dynamic_threshold = baseline + (self.threshold_multiplier * std_dev)
-        absolute_threshold = max(dynamic_threshold, self.min_peak_height)
-
-        device_state['samples_since_peak'] += 1
-
-        # Check for peak detection for this device
-        if (device_state['smoothed_value'] > absolute_threshold and
-            device_state['samples_since_peak'] >= self.debounce_samples):
-
-            recent_max = max(device_state['window'][-3:])
-            if recent_max == device_state['smoothed_value']:
-                self.on_peak(device_state['smoothed_value'], key)
-                device_state['samples_since_peak'] = 0
+        if abs(new_sample) >= self.threshold and self.samples_since_peak[key] >= self.debounce_samples:
+            self.on_peak(new_sample, key)
+            self.samples_since_peak[key] = 0
 
         return new_sample
 
@@ -160,12 +140,16 @@ class PeakDetector:
     def on_peak(sample: float, key: str):
         print('peak:', sample)
         if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
-            # TODO: press the right key on wayland. nixos.. 
+            # TODO: press the right key on wayland. nixos..
             subprocess.run(["ydotool", "key", "57:1", "57:0"])
         else:
             keyboard.write(key)
 
 
 if __name__ == '__main__':
-    # Default sensitivity=1.0, increase for more sensitive detection
-    asyncio.run(PeakDetector(HTTPDataSource()).run())
+    # Pass threshold (default 0.5) and debounce_samples (default 10) as parameters
+    # POST to /settings with JSON {"threshold": 0.7, "debounce_samples": 5} to update at runtime
+    http_source = HTTPDataSource()
+    detector = PeakDetector(http_source, threshold=0.2, debounce_samples=10)
+    http_source.peak_detector = detector
+    asyncio.run(detector.run())
