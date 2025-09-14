@@ -7,6 +7,8 @@ import threading
 import logging
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
+import socketio
+import json
 
 class DataSource(ABC):
     @abstractmethod
@@ -27,28 +29,38 @@ class HTTPDataSource(DataSource):
         self.data_queue = asyncio.Queue()
         self.server_started = False
 
+        self.sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins="*")
+        self.socket_app = socketio.ASGIApp(self.sio, self.app)
+
         @self.app.route('/')
         async def serve_client():
             return await send_file('http_client.html')
 
-        @self.app.route('/data', methods=['POST'])
-        async def handle_data():
+        @self.sio.event
+        async def connect(sid, environ):
+            print(f'Client {sid} connected')
+
+        @self.sio.event
+        async def disconnect(sid):
+            print(f'Client {sid} disconnected')
+
+        @self.sio.event
+        async def data(sid, data):
             try:
-                json_data = await request.get_json()
+                json_data = json.loads(data)
                 for e in json_data:
                     await self.data_queue.put(e['z'])
-                return jsonify({'status': 'success'})
-            except (ValueError, TypeError):
-                return jsonify({'error': 'Invalid JSON or non-numeric value'}), 400
+            except (ValueError, TypeError, KeyError) as e:
+                print(f'Error processing data: {e}')
 
     async def _start_server(self):
         if not self.server_started:
             self.server_started = True
-            print(f'HTTPDataSource listening on http://0.0.0.0:{self.port}/')
+            print(f'HTTPDataSource with Socket.IO listening on http://0.0.0.0:{self.port}/')
             cfg = Config()
             cfg.bind = [f"0.0.0.0:{self.port}"]
             # cfg.loglevel = "error"
-            await serve(self.app, cfg)
+            await serve(self.socket_app, cfg)
 
     async def read(self) -> float:
         if not self.server_started:
@@ -78,6 +90,7 @@ class PeakDetector:
     @staticmethod
     def on_peak(sample: float):
         print('peak:', sample)
+        keyboard.press(' ')
 
 
 if __name__ == '__main__':
