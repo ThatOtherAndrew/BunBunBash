@@ -69,17 +69,15 @@ class PeakDetector:
     async def tick(self) -> float:
         new_sample = await self.data_source.read()
         if new_sample > self.sensitivity:
-            print(f'\n{new_sample}', end=' ')
-            self.on_peak()
+            self.on_peak(new_sample)
         self.window.append(await self.data_source.read())
         self.window.pop(0)
 
-        print(' '.join(f'{x:.2f}' for x in self.window), end='\r')
         return new_sample
 
     @staticmethod
-    def on_peak():
-        print('peak')
+    def on_peak(sample: float):
+        print('peak:', sample)
 
 
 if __name__ == '__main__':
