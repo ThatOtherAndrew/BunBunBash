@@ -90,6 +90,7 @@ class PeakDetector:
     @staticmethod
     def on_peak(sample: float):
         print('peak:', sample)
+        keyboard.press(' ')
 
 
 if __name__ == '__main__':
