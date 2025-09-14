@@ -15,6 +15,9 @@
     <option value="b">B</option>
     <option value="c">C</option>
     </select>
+    <video id="preventSleep" muted loop playsinline style="display: none;">
+      <source src="data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAAhmcmVlAAAAGm1kYXQAAAGzABAHAAABthADAowdbbPYAAAC6W1vb3YAAABsbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAAAAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAPAAAADwAAAAAC9nJhawAAAHB0a2hkAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAOgAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAABAAAAAAAAAA8AAAAAAAAAD0AAAAAJYgGBdDJU09EUlgAVV9VaVoAWmRleWQAX2FuZC9wYXJhbXNZUkPExLDhBAIAAAAAHGJmcm1hL3NvZmVhAAAAAAEAAAABAAAAFOgPbWRhdAAAAB4=" type="video/mp4">
+    </video>
   </body>
   <style>
     * {
@@ -34,11 +37,34 @@
     }
 
         const socket = io();
+        let wakeLock = null;
+
+        // Start video to prevent sleep
+        function startVideoToPreventSleep() {
+            const video = document.getElementById('preventSleep');
+            video.play().catch(e => console.log('Video play failed:', e));
+        }
+
+        // Use Wake Lock API if available
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Wake lock acquired');
+                } catch (err) {
+                    console.log('Wake lock failed:', err);
+                }
+            }
+        }
 
     async function start() {
       const hasPermission = await requestPermission();
       window.addEventListener("devicemotion", handleMotion);
       socket.emit("key", document.getElementById("key").value);
+
+      // Prevent sleep
+      startVideoToPreventSleep();
+      await requestWakeLock();
     }
 
         function handleMotion(event) {
