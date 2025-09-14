@@ -269,22 +269,56 @@
         }
         
         let magnitudeChart;
-        let magnitudeData = [[], []];
+        let multiKeyData = {}; // Store data for each key
         let peakAnnotations = [];
         let peakImage = new Image();
         peakImage.src = '/img.png';
         
-        // Initialize graphs
-        function initializeGraphs() {
-            const magnitudeGraphEl = document.getElementById('magnitudeGraph');
-            if (!magnitudeGraphEl) {
-                console.error('magnitudeGraph element not found');
-                return;
+        // Define colors for different keys
+        const keyColors = {
+            'A': '#e74c3c',  // Red
+            'B': '#3498db',  // Blue 
+            'C': '#2ecc71',  // Green
+            'D': '#f39c12',  // Orange
+            'E': '#9b59b6'   // Purple
+        };
+        
+        // Initialize multi-key data structure
+        function initializeMultiKeyData() {
+            multiKeyData = {
+                timestamps: []
+            };
+        }
+        
+        // Add a new key series to the chart
+        function addKeySeries(key) {
+            if (!multiKeyData[key]) {
+                multiKeyData[key] = [];
+                console.log(`Adding new key series: ${key}`);
             }
+        }
+        
+        // Rebuild chart with current series
+        function rebuildChart() {
+            const magnitudeGraphEl = document.getElementById('magnitudeGraph');
+            if (!magnitudeGraphEl) return;
             
-            // Magnitude graph with uPlot
+            // Get all current keys
+            const keys = Object.keys(multiKeyData).filter(k => k !== 'timestamps');
+            
+            // Build series configuration
+            const series = [{}]; // x-axis (time)
+            keys.forEach(key => {
+                series.push({
+                    label: `Device ${key}`,
+                    stroke: keyColors[key] || '#34495e',
+                    width: 2,
+                    spanGaps: true  // Connect points even with gaps
+                });
+            });
+            
             const magnitudeOpts = {
-                title: 'Acceleration Magnitude',
+                title: 'Multi-Device Acceleration',
                 width: magnitudeGraphEl.clientWidth || 800,
                 height: 400,
                 scales: {
@@ -300,48 +334,93 @@
                         label: 'Time (s)'
                     },
                     {
-                        label: 'Magnitude (m/s²)',
+                        label: 'Z-Value',
                         scale: 'y'
                     }
                 ],
-                series: [
-                    {},
-                    {
-                        label: 'Magnitude',
-                        stroke: '#9b59b6',
-                        width: 2
-                    }
-                ],
+                series: series,
                 hooks: {
                     draw: [drawPeakAnnotations]
                 }
             };
             
-            magnitudeChart = new uPlot(magnitudeOpts, magnitudeData, magnitudeGraphEl);
+            // Prepare initial data for the chart
+            const initialData = [multiKeyData.timestamps || []];
+            keys.forEach(key => {
+                const keyValues = (multiKeyData.timestamps || []).map(timestamp => {
+                    const point = multiKeyData[key].find(p => p.timestamp === timestamp);
+                    return point ? point.value : null;
+                });
+                initialData.push(keyValues);
+            });
+            
+            // Destroy old chart and create new one with data
+            if (magnitudeChart) {
+                magnitudeChart.destroy();
+            }
+            magnitudeChart = new uPlot(magnitudeOpts, initialData.length > 1 ? initialData : [[]], magnitudeGraphEl);
+        }
+        
+        // Initialize graphs
+        function initializeGraphs() {
+            const magnitudeGraphEl = document.getElementById('magnitudeGraph');
+            
+            if (!magnitudeGraphEl) {
+                return;
+            }
+            
+            // Initialize with empty multi-key data structure
+            initializeMultiKeyData();
+            
+            // Create initial chart
+            rebuildChart();
         }
         
         // Custom hook to draw peak annotations with images
         function drawPeakAnnotations(u) {
+            const imgWidth = 100;
+            const imgHeight = 100;
             const ctx = u.ctx;
             const { left, top, width, height } = u.bbox;
             
             peakAnnotations.forEach(peak => {
                 const x = u.valToPos(peak.timestamp, 'x', true);
-                const y = u.valToPos(peak.magnitude, 'y', true);
+                const y = u.valToPos(peak.z_value, 'y', true);
+                
+                // Draw vertical red dashed line at peak timestamp
+                if (x >= left && x <= left + width) {
+                    ctx.setLineDash([5, 5]); // 5px dash, 5px gap
+                    ctx.strokeStyle = '#ff0000'; // Red color
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x, top);
+                    ctx.lineTo(x, top + height);
+                    ctx.stroke();
+                    ctx.setLineDash([]); // Reset line dash
+                }
+                
+                // Draw red highlighted debounce box (if debounce_end is available)
+                if (peak.debounce_end) {
+                    const debounceEndX = u.valToPos(peak.debounce_end, 'x', true);
+                    if (debounceEndX > x && x >= left && debounceEndX <= left + width) {
+                        ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; // Semi-transparent red
+                        ctx.fillRect(x, top, debounceEndX - x, height);
+                    }
+                }
                 
                 if (x >= left && x <= left + width && y >= top && y <= top + height) {
                     // Draw peak image
                     if (peakImage.complete) {
-                        const imgWidth = 70;
-                        const imgHeight = 70;
-                        ctx.drawImage(peakImage, x, y - imgHeight/2 + 10, imgWidth, imgHeight);
+                        // const imgWidth = 20;
+                        // const imgHeight = 20;
+                        ctx.drawImage(peakImage, x - imgWidth/2, y - imgHeight/2, imgWidth, imgHeight);
                     }
                     
-                    // Draw text annotation
-                    ctx.fillStyle = '#e74c3c';
-                    ctx.font = '8px Arial';
+                    // Draw text annotation with key info
+                    ctx.fillStyle = keyColors[peak.key] || '#e74c3c';
+                    ctx.font = '10px Arial';
                     ctx.textAlign = 'center';
-                    ctx.fillText(`${peak.magnitude.toFixed(2)}`, x, y - 15);
+                    ctx.fillText(`${peak.key}:${peak.z_value.toFixed(2)}`, x, y - 15);
                 }
             });
         }
@@ -356,33 +435,97 @@
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }
-                const newDataPoints = await response.json();
+                const newDataPointsByKey = await response.json();
                 
-                if (newDataPoints.length > 0) {
+                let hasNewData = false;
+                let latestTimestamp = lastTimestamp;
+                
+                let needsRebuild = false;
+                
+                // Process data for each key
+                Object.keys(newDataPointsByKey).forEach(key => {
+                    const newPoints = newDataPointsByKey[key];
+                    if (newPoints && newPoints.length > 0) {
+                        hasNewData = true;
+                        
+                        // Check if this is a new key
+                        if (!multiKeyData[key]) {
+                            needsRebuild = true;
+                        }
+                        
+                        // Ensure key series exists
+                        addKeySeries(key);
+                        
+                        // Add new data points for this key
+                        newPoints.forEach(point => {
+                            if (!multiKeyData.timestamps.includes(point.timestamp)) {
+                                multiKeyData.timestamps.push(point.timestamp);
+                            }
+                            multiKeyData[key].push({timestamp: point.timestamp, value: point.z_value || 0});
+                            latestTimestamp = Math.max(latestTimestamp, point.timestamp);
+                        });
+                    }
+                });
+                
+                // Rebuild chart if new keys were added
+                if (needsRebuild) {
+                    rebuildChart();
+                }
+                
+                if (hasNewData) {
                     consecutiveErrors = 0;  // Reset error counter
                     
-                    // Add new data points
-                    newDataPoints.forEach(point => {
-                        magnitudeData[0].push(point.timestamp);
-                        magnitudeData[1].push(point.magnitude || 0);
-                    });
+                    // Sort timestamps
+                    multiKeyData.timestamps.sort((a, b) => a - b);
                     
                     // Keep only recent data (trim old data)
-                    const maxPoints = 1000;  // Keep max 1000 points in memory
-                    while (magnitudeData[0].length > maxPoints) {
-                        magnitudeData[0].shift();
-                        magnitudeData[1].shift();
+                    const maxPoints = 1000;
+                    while (multiKeyData.timestamps.length > maxPoints) {
+                        const oldTimestamp = multiKeyData.timestamps.shift();
+                        // Remove corresponding data points from all keys
+                        Object.keys(multiKeyData).forEach(key => {
+                            if (key !== 'timestamps' && multiKeyData[key]) {
+                                multiKeyData[key] = multiKeyData[key].filter(p => p.timestamp !== oldTimestamp);
+                            }
+                        });
                     }
                     
-                    const currentTime = newDataPoints[newDataPoints.length - 1].timestamp;
-                    const windowSize = 5; // 5 second rolling window for magnitude
+                    // Prepare data for uPlot format
+                    const plotData = [multiKeyData.timestamps];
                     
-                    // Update charts with new data and scrolling window
-                    magnitudeChart.setData(magnitudeData);
-                    magnitudeChart.setScale('x', {
-                        min: currentTime - windowSize,
-                        max: currentTime
+                    // Get keys in consistent order
+                    const orderedKeys = Object.keys(multiKeyData).filter(k => k !== 'timestamps').sort();
+                    
+                    // Add data series for each key in order
+                    orderedKeys.forEach(key => {
+                        const keyValues = multiKeyData.timestamps.map(timestamp => {
+                            const point = multiKeyData[key].find(p => p.timestamp === timestamp);
+                            // Use undefined instead of null for gaps to maintain line continuity
+                            return point ? point.value : undefined;
+                        });
+                        plotData.push(keyValues);
                     });
+                    
+                    const currentTime = latestTimestamp;
+                    const windowSize = 5; // 5 second rolling window
+                    
+                    // Only update chart if we have the right number of series
+                    if (plotData.length === magnitudeChart.series.length) {
+                        // Update chart with new data and scrolling window
+                        magnitudeChart.setData(plotData);
+                        magnitudeChart.setScale('x', {
+                            min: currentTime - windowSize,
+                            max: currentTime
+                        });
+                    } else {
+                        // Series count mismatch, need to rebuild
+                        rebuildChart();
+                        magnitudeChart.setData(plotData);
+                        magnitudeChart.setScale('x', {
+                            min: currentTime - windowSize,
+                            max: currentTime
+                        });
+                    }
                     
                     lastTimestamp = currentTime;
                     
@@ -408,9 +551,24 @@
                 
                 if (!stats.error) {
                     document.getElementById('totalPoints').textContent = stats.total_points;
-                    document.getElementById('currentMagnitude').textContent = stats.current_magnitude.toFixed(2);
-                    document.getElementById('avgMagnitude').textContent = stats.avg_magnitude.toFixed(2);
                     document.getElementById('detectedPeaks').textContent = stats.detected_peaks;
+                    
+                    // Update with multi-key stats
+                    const keys = Object.keys(stats.keys || {});
+                    if (keys.length > 0) {
+                        // Show average across all keys
+                        let totalCurrent = 0;
+                        let totalAvg = 0;
+                        keys.forEach(key => {
+                            totalCurrent += stats.keys[key].current_value;
+                            totalAvg += stats.keys[key].avg_value;
+                        });
+                        document.getElementById('currentMagnitude').textContent = (totalCurrent / keys.length).toFixed(2);
+                        document.getElementById('avgMagnitude').textContent = (totalAvg / keys.length).toFixed(2);
+                    } else {
+                        document.getElementById('currentMagnitude').textContent = '0.0';
+                        document.getElementById('avgMagnitude').textContent = '0.0';
+                    }
                 }
                 
             } catch (error) {
@@ -439,18 +597,61 @@
                 
                 // Load initial historical data
                 const historyResponse = await fetch(`/api/data/history?limit=100`);
-                const historicalData = await historyResponse.json();
+                if (!historyResponse.ok) {
+                    throw new Error(`Failed to fetch history: ${historyResponse.status}`);
+                }
+                const historicalDataByKey = await historyResponse.json();
                 
-                if (historicalData.length > 0) {
-                    // Populate initial data
-                    magnitudeData[0] = historicalData.map(d => d.timestamp);
-                    magnitudeData[1] = historicalData.map(d => d.magnitude || 0);
+                // Check if response is an error object
+                if (historicalDataByKey.error) {
+                    throw new Error(`Backend error: ${historicalDataByKey.message || 'Unknown error'}`);
+                }
+                
+                let hasHistoricalData = false;
+                let maxTimestamp = 0;
+                
+                // Process historical data for each key
+                Object.keys(historicalDataByKey).forEach(key => {
+                    const keyData = historicalDataByKey[key];
+                    if (Array.isArray(keyData) && keyData.length > 0) {
+                        hasHistoricalData = true;
+                        addKeySeries(key);
+                        
+                        keyData.forEach(point => {
+                            if (!multiKeyData.timestamps.includes(point.timestamp)) {
+                                multiKeyData.timestamps.push(point.timestamp);
+                            }
+                            multiKeyData[key].push({timestamp: point.timestamp, value: point.z_value || 0});
+                            maxTimestamp = Math.max(maxTimestamp, point.timestamp);
+                        });
+                    }
+                });
+                
+                // Rebuild chart with all series
+                if (hasHistoricalData) {
+                    rebuildChart();
+                    
+                    // Sort timestamps
+                    multiKeyData.timestamps.sort((a, b) => a - b);
+                    
+                    // Prepare data for uPlot format
+                    const plotData = [multiKeyData.timestamps];
+                    
+                    Object.keys(multiKeyData).forEach(key => {
+                        if (key !== 'timestamps') {
+                            const keyValues = multiKeyData.timestamps.map(timestamp => {
+                                const point = multiKeyData[key].find(p => p.timestamp === timestamp);
+                                return point ? point.value : null;
+                            });
+                            plotData.push(keyValues);
+                        }
+                    });
                     
                     // Set initial data
-                    magnitudeChart.setData(magnitudeData);
+                    magnitudeChart.setData(plotData);
                     
                     // Set initial timestamp
-                    lastTimestamp = historicalData[historicalData.length - 1].timestamp;
+                    lastTimestamp = maxTimestamp;
                 }
                 
                 // Start continuous updates
@@ -497,11 +698,14 @@
                     console.error('Failed to clear data');
                 }
                 
-                // Clear uPlot data
-                magnitudeData = [[], []];
+                // Clear multi-key data
+                initializeMultiKeyData();
                 peakAnnotations = [];
+                lastTimestamp = 0;
                 
-                magnitudeChart.setData(magnitudeData);
+                // Rebuild chart with empty data
+                rebuildChart();
+                magnitudeChart.setData([[]]);
                 
                 lastDataLength = 0;
                 alert('Data cleared successfully!');
@@ -525,6 +729,9 @@
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
             initializeGraphs();
+            
+            // Auto-start data collection
+            startDataCollection();
             
             // Handle window resize
             window.addEventListener('resize', () => {

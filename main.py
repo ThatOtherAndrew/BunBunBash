@@ -55,9 +55,15 @@ class HTTPDataSource(DataSource):
         async def data(sid, data):
             try:
                 json_data = json.loads(data)
+                # Add the key to each data point before echoing
+                enriched_data = []
                 for e in json_data:
                     await self.data_queue.put((e['z'], self.clients[sid]))
-                await self.sio.emit('data', data)
+                    # Add the client's key to the data
+                    e['key'] = self.clients[sid]
+                    enriched_data.append(e)
+                # Emit the enriched data with keys
+                await self.sio.emit('data', json.dumps(enriched_data))
             except (ValueError, TypeError, KeyError) as e:
                 print(f'Error processing data: {e}')
 
@@ -161,4 +167,5 @@ class PeakDetector:
 
 
 if __name__ == '__main__':
+    # Default sensitivity=1.0, increase for more sensitive detection
     asyncio.run(PeakDetector(HTTPDataSource()).run())
