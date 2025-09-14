@@ -12,82 +12,52 @@ from collections import deque
 from typing import Dict, Optional, Callable
 
 # Import HackMIT classes
-from main import DataSource, PeakDetector
+from main import DataSource, PeakDetector, HTTPDataSource
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 
-# Enhanced DataSource for 3-axis acceleration data
-class AccelerationDataSource(DataSource):
-    """3-axis acceleration data source compatible with HackMIT's async pattern"""
+# Adapter to convert HTTPDataSource to 3-axis format for dashboard compatibility
+class RealDataAdapter(DataSource):
+    """Adapts HTTPDataSource (z-axis only) to dashboard's 3-axis format"""
     
-    def __init__(self):
+    def __init__(self, port=5000):
+        self.http_source = HTTPDataSource(port=port)
         self.start_time = time.time()
-        # Configuration parameters (similar to original app.py)
-        self.ax_amplitude_primary = 0.5
-        self.ax_amplitude_secondary = 0.2
-        self.ax_frequency_primary = 0.5
-        self.ax_frequency_secondary = 2.1
-        self.ax_noise_level = 0.1
-        
-        self.ay_amplitude_cos = 0.3
-        self.ay_amplitude_sin = 0.4
-        self.ay_frequency_cos = 0.7
-        self.ay_frequency_sin = 1.3
-        self.ay_noise_level = 0.1
-        
-        self.az_base = 9.81
-        self.az_variation_amplitude = 0.2
-        self.az_variation_frequency = 0.3
-        self.az_noise_level = 0.2
     
     async def read(self) -> Dict[str, float]:
-        """Generate realistic 3-axis acceleration data"""
-        await asyncio.sleep(0.016)  # Match 60Hz data rate
-        
+        """Read z-axis data from HTTPDataSource and format for dashboard"""
+        z_value = await self.http_source.read()
         current_time = time.time() - self.start_time
         
-        # Generate X-axis acceleration
-        ax = (self.ax_amplitude_primary * math.sin(current_time * self.ax_frequency_primary * 2 * math.pi) + 
-              self.ax_amplitude_secondary * math.sin(current_time * self.ax_frequency_secondary * 2 * math.pi) + 
-              random.uniform(-self.ax_noise_level, self.ax_noise_level))
-        
-        # Generate Y-axis acceleration
-        ay = (self.ay_amplitude_cos * math.cos(current_time * self.ay_frequency_cos * 2 * math.pi) + 
-              self.ay_amplitude_sin * math.sin(current_time * self.ay_frequency_sin * 2 * math.pi) + 
-              random.uniform(-self.ay_noise_level, self.ay_noise_level))
-        
-        # Generate Z-axis acceleration
-        az = (self.az_base + 
-              self.az_variation_amplitude * math.sin(current_time * self.az_variation_frequency * 2 * math.pi) + 
-              random.uniform(-self.az_noise_level, self.az_noise_level))
-        
+        # Return z-axis as primary data, with x and y at 0
         return {
             'timestamp': current_time,
-            'ax': round(ax, 3),
-            'ay': round(ay, 3),
-            'az': round(az, 3)
+            'ax': 0.0,  # No x-axis data from real source
+            'ay': 0.0,  # No y-axis data from real source  
+            'az': round(z_value, 3)
         }
 
 class MagnitudeDataSource(DataSource):
     """Adapter to convert 3-axis data to single magnitude for main.py PeakDetector"""
     
-    def __init__(self, acceleration_source: AccelerationDataSource):
+    def __init__(self, acceleration_source: RealDataAdapter):
         self.acceleration_source = acceleration_source
         self.latest_data = None
         
     async def read(self) -> float:
-        """Return magnitude from 3-axis acceleration data"""
+        """Return magnitude from acceleration data"""
         data_point = await self.acceleration_source.read()
         self.latest_data = data_point
         
-        # Calculate magnitude
+        # For real data, magnitude is just the z-axis value since x,y are 0
+        # But we calculate properly in case we add more axes later
         magnitude = math.sqrt(data_point['ax']**2 + data_point['ay']**2 + data_point['az']**2)
         return magnitude
 
 class DashboardPeakAdapter:
     """Modular adapter that wraps main.py PeakDetector without inheritance"""
     
-    def __init__(self, acceleration_source: AccelerationDataSource):
+    def __init__(self, acceleration_source: RealDataAdapter):
         self.acceleration_source = acceleration_source
         self.magnitude_source = MagnitudeDataSource(acceleration_source)
         self.peak_detector = PeakDetector(self.magnitude_source)
@@ -149,12 +119,17 @@ class DashboardPeakAdapter:
 # Global data storage and async components
 acceleration_data = deque(maxlen=1000)  # Store more data for smooth 60Hz operation
 peak_detector: Optional[DashboardPeakAdapter] = None
-data_source: Optional[AccelerationDataSource] = None
+data_source: Optional[RealDataAdapter] = None
 loop = None
 data_thread = None
 
-def start_async_data_collection():
-    """Start async data collection in background thread"""
+def start_async_data_collection(use_real_data=True, port=5000):
+    """Start async data collection in background thread
+    
+    Args:
+        use_real_data: If True, use HTTPDataSource. If False, use simulated data.
+        port: Port for HTTPDataSource when using real data
+    """
     global peak_detector, data_source, loop, data_thread
     
     # Don't start multiple threads
@@ -167,12 +142,16 @@ def start_async_data_collection():
         asyncio.set_event_loop(loop)
         
         async def data_collection_loop():
-            # print("🔄 Starting async data collection loop...")
+            print(f"🔄 Starting {'real' if use_real_data else 'simulated'} data collection...")
+            if use_real_data:
+                print(f"📡 Waiting for data on port {port}...")
             while True:
                 try:
                     data_point = await peak_detector.tick()
                     acceleration_data.append(data_point)
-                    await asyncio.sleep(0.016)  # ~60Hz data rate for smooth updates
+                    # No sleep needed - HTTPDataSource will block until data arrives
+                    if not use_real_data:
+                        await asyncio.sleep(0.016)  # Only sleep for simulated data
                 except Exception as e:
                     print(f"❌ Error in data collection: {e}")
                     import traceback
@@ -182,7 +161,7 @@ def start_async_data_collection():
         loop.run_until_complete(data_collection_loop())
     
     # Initialize components
-    data_source = AccelerationDataSource()
+    data_source = RealDataAdapter(port=port) if use_real_data else SimulatedDataSource()
     peak_detector = DashboardPeakAdapter(data_source)
     
     # Set up peak callback
@@ -275,8 +254,11 @@ def get_statistics():
 @app.route('/api/control/start', methods=['POST'])
 def start_data_collection():
     """Start data collection"""
-    start_async_data_collection()
-    return jsonify({'status': 'started'})
+    data = request.get_json() or {}
+    use_real = data.get('use_real_data', True)
+    port = data.get('port', 5000)
+    start_async_data_collection(use_real_data=use_real, port=port)
+    return jsonify({'status': 'started', 'mode': 'real' if use_real else 'simulated', 'port': port})
 
 @app.route('/api/control/stop', methods=['POST'])
 def stop_data_collection():
@@ -326,10 +308,33 @@ def update_sensitivity():
 
 # HTML template moved to templates/dashboard.html
 
+# Keep original simulated source for testing
+class SimulatedDataSource(DataSource):
+    """Simulated 3-axis acceleration data for testing without real device"""
+    
+    def __init__(self):
+        self.start_time = time.time()
+    
+    async def read(self) -> Dict[str, float]:
+        """Generate simulated data for testing"""
+        await asyncio.sleep(0.016)
+        current_time = time.time() - self.start_time
+        
+        # Simple sine wave for testing
+        z_value = 9.81 + 0.5 * math.sin(current_time * 2 * math.pi)
+        
+        return {
+            'timestamp': current_time,
+            'ax': 0.0,
+            'ay': 0.0,
+            'az': round(z_value, 3)
+        }
+
 if __name__ == '__main__':
     print("🚀 Starting HackMIT Acceleration Dashboard...")
     print("📊 Dashboard available at: http://localhost:8080")
-    print("🔍 Features: Async data generation, real-time peak detection, interactive visualization")
+    print("📡 Ready to receive real data from HTTPDataSource on port 5000")
+    print("💡 Send POST to /api/control/start with {use_real_data: true, port: 5000}")
     
     # Don't auto-start, let client control via API
     

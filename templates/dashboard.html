@@ -39,6 +39,39 @@
             margin-bottom: 30px;
             flex-wrap: wrap;
         }
+        button {
+            padding: 10px 20px;
+            margin: 0 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        
+        .btn-icon {
+            padding: 8px 12px;
+            background: transparent;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .btn-icon:hover {
+            transform: scale(1.15);
+        }
+        
+        .btn-icon:active {
+            transform: scale(0.95);
+            transition: all 0.1s;
+        }
+        
+        .btn-icon img {
+            vertical-align: middle;
+        }
+        
         .button {
             padding: 12px 24px;
             border: none;
@@ -130,6 +163,17 @@
             -webkit-appearance: textfield;
             appearance: textfield;
         }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+            -webkit-appearance: textfield;
+            appearance: textfield;
+        }
     </style>
 </head>
 <body>
@@ -138,9 +182,12 @@
         </div>
         
         <div class="controls">
-            <button id="startBtn" class="button">Start</button>
-            <button id="stopBtn" class="button stop">Stop</button>
-            <button class="button" onclick="clearData()" style="background: #f39c12;">🗑️ Clear</button>
+            <button id="toggleBtn" class="btn btn-icon" onclick="toggleDataCollection()">
+                <img id="toggleIcon" src="/play.png" alt="Start" width="50" height="50">
+            </button>
+            <button class="btn btn-icon" onclick="clearAllData()">
+                <img src="/restart.png" alt="Clear" width="50" height="50">
+            </button>
             <div class="sensitivity-control">
                 <label for="sensitivityInput">Peak Sensitivity:</label>
                 <input type="number" id="sensitivityInput" min="0.1" max="50.0" step="0.1" value="10.0">
@@ -185,6 +232,14 @@
     <script>
         let isRunning = false;
         let updateInterval = null;
+        
+        function toggleDataCollection() {
+            if (isRunning) {
+                stopDataCollection();
+            } else {
+                startDataCollection();
+            }
+        }
         
         let magnitudeChart, axisChart;
         let magnitudeData = [[], []];
@@ -388,7 +443,13 @@
         
         async function startDataCollection() {
             try {
-                await fetch('/api/control/start', { method: 'POST' });
+                await fetch('/api/control/start', { 
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ use_real_data: true, port: 5000 })
+                });
                 
                 // Load initial historical data
                 const historyResponse = await fetch(`/api/data/history?limit=100`);
@@ -417,8 +478,9 @@
                     clearInterval(updateInterval);
                 }
                 updateInterval = setInterval(updateGraphs, 16); // Update every 16ms for 60fps
-                document.getElementById('startBtn').style.display = 'none';
-                document.getElementById('stopBtn').style.display = 'inline-block';
+                isRunning = true;
+                document.getElementById('toggleIcon').src = '/pause.PNG';
+                document.getElementById('toggleIcon').alt = 'Stop';
             } catch (error) {
                 console.error('Error starting data collection:', error);
             }
@@ -430,15 +492,17 @@
                 isRunning = false;
                 if (updateInterval) {
                     clearInterval(updateInterval);
+                    updateInterval = null;
                 }
-                document.getElementById('startBtn').style.display = 'inline-block';
-                document.getElementById('stopBtn').style.display = 'none';
+                isRunning = false;
+                document.getElementById('toggleIcon').src = '/play.png';
+                document.getElementById('toggleIcon').alt = 'Start';
             } catch (error) {
                 console.error('Error stopping data collection:', error);
             }
         }
         
-        async function clearData() {
+        async function clearAllData() {
             try {
                 const response = await fetch('/api/data/clear', {
                     method: 'POST',
@@ -500,9 +564,7 @@
                 }
             });
             
-            // Add event listeners for Start/Stop buttons
-            document.getElementById('startBtn').addEventListener('click', startDataCollection);
-            document.getElementById('stopBtn').addEventListener('click', stopDataCollection);
+            // Toggle button is handled by onclick attribute
             
             // Initialize sensitivity input
             const sensitivityInput = document.getElementById('sensitivityInput');
