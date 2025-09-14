@@ -94,30 +94,61 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            margin-left: 20px;
+        }
+        .sensitivity-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: 20px;
+            background: rgba(255,255,255,0.1);
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+        .sensitivity-control label {
+            color: #ecf0f1;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .sensitivity-control input[type="number"] {
+            width: 80px;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            background: #ecf0f1;
+            color: #2c3e50;
+            font-size: 14px;
+            -webkit-appearance: textfield;
+            appearance: textfield;
         }
         input[type="number"] {
             padding: 8px;
             border: 2px solid #ddd;
             border-radius: 5px;
             width: 80px;
+            -webkit-appearance: textfield;
+            appearance: textfield;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🚀 HackMIT Acceleration Dashboard</h1>
-            <p>Real-time 3-axis acceleration monitoring with async peak detection</p>
         </div>
         
         <div class="controls">
-            <button id="startBtn" class="button" onclick="startDataCollection()">▶️ Start</button>
-            <button id="stopBtn" class="button stop" onclick="stopDataCollection()">⏹️ Stop</button>
+            <button id="startBtn" class="button">Start</button>
+            <button id="stopBtn" class="button stop">Stop</button>
             <button class="button" onclick="clearData()" style="background: #f39c12;">🗑️ Clear</button>
+            <div class="sensitivity-control">
+                <label for="sensitivityInput">Peak Sensitivity:</label>
+                <input type="number" id="sensitivityInput" min="0.1" max="50.0" step="0.1" value="10.0">
+                <span>threshold</span>
+            </div>
             <div class="control-group">
-                <label>Peak Threshold:</label>
-                <input type="number" id="peakThreshold" value="1.5" min="0.1" max="5.0" step="0.1" onchange="updatePeakThreshold()">
-                <span>m/s²</span>
+                <label>History Limit:</label>
+                <input type="number" id="historyLimit" value="1000" min="50" max="1000" step="50" onchange="updateHistoryLimit()">
+                <span>points</span>
             </div>
         </div>
         
@@ -156,7 +187,7 @@
         
         // Initialize graphs
         function initializeGraphs() {
-            // Magnitude graph
+            // Magnitude graph with scrolling window
             Plotly.newPlot('magnitudeGraph', [{
                 x: [],
                 y: [],
@@ -166,8 +197,15 @@
                 name: 'Magnitude'
             }], {
                 title: 'Acceleration Magnitude',
-                xaxis: { title: 'Time (s)' },
-                yaxis: { title: 'Magnitude (m/s²)' },
+                xaxis: { 
+                    title: 'Time (s)',
+                    range: [0, 10],  // Fixed 10-second window
+                    rangeslider: { visible: false }
+                },
+                yaxis: { 
+                    title: 'Magnitude (m/s²)',
+                    range: [7, 15]  // Fixed scale 0-20 m/s²
+                },
                 margin: { l: 50, r: 20, t: 40, b: 40 }
             });
             
@@ -201,9 +239,11 @@
             });
         }
         
+        let lastDataLength = 0;
+        
         async function updateGraphs() {
             try {
-                const response = await fetch('/api/data/history?limit=100');
+                const response = await fetch(`/api/data/history?limit=${historyLimit}`);
                 const data = await response.json();
                 
                 if (data.length > 0) {
@@ -213,16 +253,48 @@
                     const ay = data.map(d => d.ay);
                     const az = data.map(d => d.az);
                     
-                    // Update magnitude graph
-                    Plotly.restyle('magnitudeGraph', {
-                        x: [timestamps],
-                        y: [magnitudes]
-                    });
+                    const currentTime = timestamps[timestamps.length - 1] || 0;
+                    const windowSize = 5; // 5 second window
                     
-                    // Update axis graph
-                    Plotly.restyle('axisGraph', {
-                        x: [timestamps, timestamps, timestamps],
-                        y: [ax, ay, az]
+                    // Use extendTraces for smooth continuous updates if we have new data
+                    if (data.length > lastDataLength) {
+                        const newDataCount = data.length - lastDataLength;
+                        const newTimestamps = timestamps.slice(-newDataCount);
+                        const newMagnitudes = magnitudes.slice(-newDataCount);
+                        const newAx = ax.slice(-newDataCount);
+                        const newAy = ay.slice(-newDataCount);
+                        const newAz = az.slice(-newDataCount);
+                        
+                        // Extend traces smoothly
+                        Plotly.extendTraces('magnitudeGraph', {
+                            x: [newTimestamps],
+                            y: [newMagnitudes]
+                        }, [0], historyLimit);
+                        
+                        Plotly.extendTraces('axisGraph', {
+                            x: [newTimestamps, newTimestamps, newTimestamps],
+                            y: [newAx, newAy, newAz]
+                        }, [0, 1, 2], historyLimit);
+                        
+                        lastDataLength = data.length;
+                    } else {
+                        // Full update for first load or data reset
+                        Plotly.restyle('magnitudeGraph', {
+                            x: [timestamps],
+                            y: [magnitudes]
+                        });
+                        
+                        Plotly.restyle('axisGraph', {
+                            x: [timestamps, timestamps, timestamps],
+                            y: [ax, ay, az]
+                        });
+                        
+                        lastDataLength = data.length;
+                    }
+                    
+                    // Update scrolling window smoothly
+                    Plotly.relayout('magnitudeGraph', {
+                        'xaxis.range': [Math.max(0, currentTime - windowSize), currentTime + 2]
                     });
                     
                     // Add peak annotations
@@ -230,19 +302,44 @@
                     const peaks = await peaksResponse.json();
                     
                     if (peaks.length > 0) {
-                        const recentPeaks = peaks.filter(p => timestamps.includes(p.timestamp));
-                        const annotations = recentPeaks.map(peak => ({
-                            x: peak.timestamp,
-                            y: peak.magnitude,
-                            text: `Peak: ${peak.magnitude.toFixed(2)}`,
-                            showarrow: true,
-                            arrowhead: 2,
-                            arrowcolor: '#e74c3c',
-                            bgcolor: 'rgba(255,255,255,0.8)',
-                            bordercolor: '#e74c3c'
+                        // Show recent peaks based on history limit
+                        const peakLimit = Math.min(50, Math.floor(historyLimit / 2));
+                        const recentPeaks = peaks.slice(-peakLimit);
+                        
+                        // Create image annotations using Plotly's images property
+                        const imageAnnotations = recentPeaks.map(peak => ({
+                            source: '/img.png',
+                            xref: 'x',
+                            yref: 'y',
+                            x: peak.timestamp + 0.1,
+                            y: peak.magnitude + 0.025 ,
+                            sizex: 0.5,  // Width in data coordinates (increase for wider)
+                            sizey: 0.5,  // Height in data coordinates (increase for taller)
+                            xanchor: 'center',
+                            yanchor: 'middle',
+                            layer: 'above'
                         }));
                         
-                        Plotly.relayout('magnitudeGraph', { annotations: annotations });
+                        // Also add text annotations for labels
+                        const textAnnotations = recentPeaks.map(peak => ({
+                            x: peak.timestamp,
+                            y: peak.magnitude + 0.4,  // Position above the image
+                            text: `Peak: ${peak.magnitude.toFixed(2)}`,
+                            showarrow: false,
+                            bgcolor: 'rgba(255,255,255,0.8)',
+                            bordercolor: '#e74c3c',
+                            borderwidth: 1,
+                            font: {
+                                color: '#e74c3c',
+                                size: 5,
+                                family: 'Arial, sans-serif'
+                            }
+                        }));
+                        
+                        Plotly.relayout('magnitudeGraph', { 
+                            images: imageAnnotations,
+                            annotations: textAnnotations 
+                        });
                     }
                 }
                 
@@ -265,8 +362,9 @@
         async function startDataCollection() {
             try {
                 await fetch('/api/control/start', { method: 'POST' });
-                isRunning = true;
-                updateInterval = setInterval(updateGraphs, 500);
+                
+                updateGraphs();
+                setInterval(updateGraphs, 500); // Update every 500ms
                 document.getElementById('startBtn').style.display = 'none';
                 document.getElementById('stopBtn').style.display = 'inline-block';
             } catch (error) {
@@ -301,23 +399,65 @@
             }
         }
         
-        async function updatePeakThreshold() {
-            const threshold = document.getElementById('peakThreshold').value;
-            try {
-                await fetch('/api/config/peak_threshold', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ threshold: parseFloat(threshold) })
-                });
-            } catch (error) {
-                console.error('Error updating peak threshold:', error);
+        let historyLimit = 100;
+        
+        function updateHistoryLimit() {
+            const newLimit = parseInt(document.getElementById('historyLimit').value);
+            if (newLimit >= 50 && newLimit <= 1000) {
+                historyLimit = newLimit;
+            } else {
+                alert('History limit must be between 50 and 1000 points');
+                document.getElementById('historyLimit').value = historyLimit;
             }
         }
         
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
             initializeGraphs();
+            
+            // Initialize magnitude graph with sensitivity line
+            const sensitivityValue = parseFloat(document.getElementById('sensitivityInput').value);
+            Plotly.restyle('magnitudeGraph', {
+                y: [[sensitivityValue, sensitivityValue]]
+            }, [1]);
+            
+            // Add event listeners for Start/Stop buttons
+            document.getElementById('startBtn').addEventListener('click', startDataCollection);
+            document.getElementById('stopBtn').addEventListener('click', stopDataCollection);
+            
+            // Initialize sensitivity input
+            const sensitivityInput = document.getElementById('sensitivityInput');
+            
+            sensitivityInput.addEventListener('change', function() {
+                const newSensitivity = parseFloat(this.value);
+                
+                // Validate input
+                if (isNaN(newSensitivity) || newSensitivity < 0.1 || newSensitivity > 50.0) {
+                    alert('Please enter a sensitivity value between 0.1 and 50.0');
+                    this.value = 10.0;
+                    return;
+                }
+                
+                // Update sensitivity via API
+                fetch('/api/sensitivity', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ sensitivity: newSensitivity })
+                });
+                
+                // Update sensitivity line on graph
+                updateSensitivityLine(newSensitivity);
+            });
         });
+        
+        function updateSensitivityLine(sensitivity) {
+            // Update the existing sensitivity line (trace index 1)
+            Plotly.restyle('magnitudeGraph', {
+                y: [[sensitivity, sensitivity]]
+            }, [1]);
+        }
     </script>
 </body>
 </html>

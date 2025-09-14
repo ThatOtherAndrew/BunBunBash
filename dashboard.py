@@ -14,7 +14,7 @@ from typing import Dict, Optional, Callable
 # Import HackMIT classes
 from main import DataSource, PeakDetector
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.', static_url_path='')
 
 # Enhanced DataSource for 3-axis acceleration data
 class AccelerationDataSource(DataSource):
@@ -68,69 +68,81 @@ class AccelerationDataSource(DataSource):
             'az': round(az, 3)
         }
 
-class EnhancedPeakDetector(PeakDetector):
-    """Enhanced PeakDetector with 3-axis support and callbacks"""
+class MagnitudeDataSource(DataSource):
+    """Adapter to convert 3-axis data to single magnitude for main.py PeakDetector"""
     
-    def __init__(self, data_source: AccelerationDataSource):
-        # Initialize with larger window for better peak detection
-        super().__init__(data_source)
-        self.window_length = 20
-        self.window = []
-        self.peak_threshold = 1.5
+    def __init__(self, acceleration_source: AccelerationDataSource):
+        self.acceleration_source = acceleration_source
+        self.latest_data = None
+        
+    async def read(self) -> float:
+        """Return magnitude from 3-axis acceleration data"""
+        data_point = await self.acceleration_source.read()
+        self.latest_data = data_point
+        
+        # Calculate magnitude
+        magnitude = math.sqrt(data_point['ax']**2 + data_point['ay']**2 + data_point['az']**2)
+        return magnitude
+
+class DashboardPeakAdapter:
+    """Modular adapter that wraps main.py PeakDetector without inheritance"""
+    
+    def __init__(self, acceleration_source: AccelerationDataSource):
+        self.acceleration_source = acceleration_source
+        self.magnitude_source = MagnitudeDataSource(acceleration_source)
+        self.peak_detector = PeakDetector(self.magnitude_source)
         self.detected_peaks = []
         self.peak_callback = None
+        
+        # Override the on_peak method to capture peaks
+        original_on_peak = self.peak_detector.on_peak
+        def capture_peak():
+            if self.magnitude_source.latest_data:
+                peak_data = self.magnitude_source.latest_data.copy()
+                magnitude = math.sqrt(peak_data['ax']**2 + peak_data['ay']**2 + peak_data['az']**2)
+                peak_data['magnitude'] = round(magnitude, 3)
+                peak_data['peak_type'] = 'magnitude'
+                self.detected_peaks.append(peak_data)
+                
+                if self.peak_callback:
+                    self.peak_callback(peak_data)
+            
+            # Call original method
+            original_on_peak()
+        
+        self.peak_detector.on_peak = capture_peak
         
     def set_peak_callback(self, callback: Callable):
         """Set callback for peak detection events"""
         self.peak_callback = callback
     
     async def tick(self) -> Dict[str, float]:
-        """Enhanced tick method for 3-axis data"""
-        data_point = await self.data_source.read()
+        """Use main.py PeakDetector directly - any changes to main.py will reflect here"""
+        # This calls main.py's tick method directly
+        magnitude = await self.peak_detector.tick()
         
-        # Calculate magnitude for peak detection
-        magnitude = math.sqrt(data_point['ax']**2 + data_point['ay']**2 + data_point['az']**2)
-        data_point['magnitude'] = round(magnitude, 3)
         
-        # Add to sliding window
-        self.window.append(data_point)
-        if len(self.window) > self.window_length:
-            self.window.pop(0)
+        # Return the full 3-axis data with magnitude
+        if self.magnitude_source.latest_data:
+            data_point = self.magnitude_source.latest_data.copy()
+            data_point['magnitude'] = round(magnitude, 3)
+            return data_point
         
-        # Peak detection on magnitude
-        if len(self.window) >= 3:
-            self.detect_peaks()
-        
-        return data_point
+        return {'timestamp': 0, 'ax': 0, 'ay': 0, 'az': 0, 'magnitude': round(magnitude, 3)}
     
-    def detect_peaks(self):
-        """Detect peaks in the magnitude data"""
-        if len(self.window) < 3:
-            return
-            
-        # Check if current point is a peak
-        current_idx = len(self.window) - 2  # Check second-to-last point
-        if current_idx < 1:
-            return
-            
-        current_mag = self.window[current_idx]['magnitude']
-        prev_mag = self.window[current_idx - 1]['magnitude']
-        next_mag = self.window[current_idx + 1]['magnitude']
-        
-        # Peak detection: current > neighbors and above threshold
-        if (current_mag > prev_mag and current_mag > next_mag and 
-            current_mag > self.peak_threshold):
-            
-            peak_data = self.window[current_idx].copy()
-            peak_data['peak_type'] = 'magnitude'
-            self.detected_peaks.append(peak_data)
-            
-            if self.peak_callback:
-                self.peak_callback(peak_data)
+    @property
+    def sensitivity(self):
+        """Access main.py PeakDetector's sensitivity"""
+        return self.peak_detector.sensitivity
+    
+    @sensitivity.setter
+    def sensitivity(self, value):
+        """Set main.py PeakDetector's sensitivity"""
+        self.peak_detector.sensitivity = value
 
 # Global data storage and async components
-acceleration_data = deque(maxlen=1000)
-peak_detector: Optional[EnhancedPeakDetector] = None
+acceleration_data = deque(maxlen=100)
+peak_detector: Optional[DashboardPeakAdapter] = None
 data_source: Optional[AccelerationDataSource] = None
 loop = None
 
@@ -144,23 +156,28 @@ def start_async_data_collection():
         asyncio.set_event_loop(loop)
         
         async def data_collection_loop():
+            # print("🔄 Starting async data collection loop...")
             while True:
                 try:
                     data_point = await peak_detector.tick()
                     acceleration_data.append(data_point)
+                    await asyncio.sleep(0.1)  # 10Hz data rate
                 except Exception as e:
-                    print(f"Error in data collection: {e}")
+                    print(f"❌ Error in data collection: {e}")
+                    import traceback
+                    traceback.print_exc()
                     await asyncio.sleep(0.1)
         
         loop.run_until_complete(data_collection_loop())
     
     # Initialize components
     data_source = AccelerationDataSource()
-    peak_detector = EnhancedPeakDetector(data_source)
+    peak_detector = DashboardPeakAdapter(data_source)
     
     # Set up peak callback
     def on_peak_detected(peak_data):
-        print(f"Peak detected: {peak_data['magnitude']:.2f} at {peak_data['timestamp']:.2f}s")
+        pass
+        # print(f"Peak detected: {peak_data['magnitude']:.2f} at {peak_data['timestamp']:.2f}s")
     
     peak_detector.set_peak_callback(on_peak_detected)
     
@@ -190,7 +207,7 @@ def get_latest_data():
 @app.route('/api/data/history')
 def get_data_history():
     """Get historical data"""
-    limit = request.args.get('limit', 100, type=int)
+    limit = request.args.get('limit', 500, type=int)
     data_list = list(acceleration_data)[-limit:]
     return jsonify(data_list)
 
@@ -252,15 +269,32 @@ def clear_data():
         data_source.start_time = time.time()
     return jsonify({'status': 'cleared'})
 
-@app.route('/api/config/peak_threshold', methods=['POST'])
-def update_peak_threshold():
+@app.route('/api/control/threshold', methods=['POST'])
+def update_threshold():
     """Update peak detection threshold"""
-    data = request.get_json()
-    threshold = data.get('threshold', 1.5)
+    global peak_detector
     
     if peak_detector:
-        peak_detector.peak_threshold = float(threshold)
+        data = request.get_json()
+        threshold = data.get('threshold', 1.5)
+        # Update threshold logic here if needed
         return jsonify({'status': 'updated', 'threshold': threshold})
+    
+    return jsonify({'error': 'Peak detector not initialized'})
+
+@app.route('/api/sensitivity', methods=['POST'])
+def update_sensitivity():
+    """Update PeakDetector sensitivity from main.py"""
+    global peak_detector
+    
+    if peak_detector:
+        data = request.get_json()
+        sensitivity = data.get('sensitivity', 10.0)
+        
+        # Update the main.py PeakDetector sensitivity directly
+        peak_detector.sensitivity = sensitivity
+        
+        return jsonify({'status': 'updated', 'sensitivity': sensitivity})
     
     return jsonify({'error': 'Peak detector not initialized'})
 
@@ -270,6 +304,9 @@ if __name__ == '__main__':
     print("🚀 Starting HackMIT Acceleration Dashboard...")
     print("📊 Dashboard available at: http://localhost:8080")
     print("🔍 Features: Async data generation, real-time peak detection, interactive visualization")
+    
+    # Start async data collection
+    start_async_data_collection()
     
     try:
         app.run(host='0.0.0.0', port=8080, debug=True, threaded=True)
