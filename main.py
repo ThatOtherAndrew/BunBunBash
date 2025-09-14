@@ -82,7 +82,7 @@ class PeakDetector:
         new_sample = await self.data_source.read()
         if new_sample >= self.sensitivity:
             self.on_peak(new_sample)
-        self.window.append(await self.data_source.read())
+        self.window.append(new_sample)
         self.window.pop(0)
 
         return new_sample
