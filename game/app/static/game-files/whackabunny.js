@@ -136,9 +136,9 @@ function loadImages() {
     bottomOverlayImg.src = '/static/images/holes_bottom_overlay.png';
     bashFrame1Img.src = '/static/images/bash_animation_1.png';
     bashFrame2Img.src = '/static/images/bash_animation_2.png';
-    sceneryBunny1Img.src = '/static/images/bunny1.gif';
-    sceneryBunny2Img.src = '/static/images/bunny2.gif';
-    sceneryBunny3Img.src = '/static/images/bunny1.gif'; // Use bunny1.gif for bunny3 (will be flipped)
+    sceneryBunny1Img.src = '/static/images/bunnygreensit.gif';
+    sceneryBunny2Img.src = '/static/images/bunnygreenlay.gif';
+    sceneryBunny3Img.src = '/static/images/bunnygreensit.gif'; // Use bunny1.gif for bunny3 (will be flipped)
     bonkAudio.src = '/static/audio/bonk.mp3';
     buzzerAudio.src = '/static/audio/buzzer.mp3';
     
