@@ -108,7 +108,6 @@ class PeakDetector:
 
     async def tick(self) -> float:
         (new_sample, key) = await self.data_source.read()
-        new_sample = abs(new_sample)
 
         # Initialize device state if needed
         self._init_device_state(key)
