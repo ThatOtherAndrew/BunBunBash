@@ -11,8 +11,8 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
+            background: linear-gradient(0deg, #ffffff 0%, #ffffff 50%);
+            color: #d35400;
         }
         .container {
             max-width: 1400px;
@@ -27,7 +27,7 @@
             margin-bottom: 30px;
         }
         .header h1 {
-            color: #2c3e50;
+            color: #d35400;
             margin: 0;
             font-size: 2.5em;
             font-weight: 300;
@@ -91,16 +91,16 @@
             background: #e74c3c;
         }
         .graphs {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
             margin-bottom: 30px;
+            padding: 0 20px;
         }
         .graph {
             background: white;
             border-radius: 10px;
-            padding: 15px;
+            padding: 20px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            width: 100%;
+            box-sizing: border-box;
         }
         .stats {
             display: grid;
@@ -108,20 +108,26 @@
             gap: 15px;
             margin-top: 20px;
         }
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
+        .stat-box {
+            background-image: url('/border.svg');
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            padding: 60px 30px 25px 30px;
             text-align: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            flex: 1;
+            min-width: 200px;
+            position: relative;
+            background-color: transparent;
+            border: none;
         }
         .stat-value {
             font-size: 2em;
             font-weight: bold;
-            color: #3498db;
+            color: #d35400;
         }
         .stat-label {
-            color: #7f8c8d;
+            color: #d35400;
             margin-top: 5px;
         }
         .control-group {
@@ -140,7 +146,7 @@
             border-radius: 6px;
         }
         .sensitivity-control label {
-            color: #ecf0f1;
+            color: #d35400;
             font-size: 14px;
             white-space: nowrap;
         }
@@ -150,7 +156,7 @@
             border: 2px solid #ddd;
             border-radius: 5px;
             background: #ecf0f1;
-            color: #2c3e50;
+            color: #d35400;
             font-size: 14px;
             -webkit-appearance: textfield;
             appearance: textfield;
@@ -174,6 +180,28 @@
             -webkit-appearance: textfield;
             appearance: textfield;
         }
+        
+        .bunny-top-left {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 60px;
+            height: auto;
+            z-index: 10;
+        }
+        
+        .bunny-bottom-right {
+            position: fixed;
+            bottom: 35px;
+            right: 0px;
+            width: 60px;
+            height: auto;
+            z-index: 10;
+        }
+        
+        .graph {
+            position: relative;
+        }
     </style>
 </head>
 <body>
@@ -189,45 +217,44 @@
                 <img src="/restart.png" alt="Clear" width="50" height="50">
             </button>
             <div class="sensitivity-control">
-                <label for="sensitivityInput">Peak Sensitivity:</label>
                 <input type="number" id="sensitivityInput" min="0.1" max="50.0" step="0.1" value="10.0">
-                <span>threshold</span>
+                <span style="color: #d35400;">threshold</span>
             </div>
             <div class="control-group">
-                <label>History Limit:</label>
+                <label style="color: #d35400;">History Limit:</label>
                 <input type="number" id="historyLimit" value="1000" min="50" max="1000" step="50" onchange="updateHistoryLimit()">
-                <span>points</span>
+                <span style="color: #d35400;">points</span>
             </div>
         </div>
         
         <div class="graphs">
             <div class="graph">
-                <div id="magnitudeGraph" style="height: 300px;"></div>
-            </div>
-            <div class="graph">
-                <div id="axisGraph" style="height: 300px;"></div>
+                <img src="/bunny_sit.gif" alt="Bunny Sitting" class="bunny-top-left">
+                <div id="magnitudeGraph" style="height: 400px;"></div>
             </div>
         </div>
         
         <div class="stats">
-            <div class="stat-card">
+            <div class="stat-box">
                 <div class="stat-value" id="totalPoints">0</div>
                 <div class="stat-label">Total Data Points</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-box">
                 <div class="stat-value" id="currentMagnitude">0.0</div>
                 <div class="stat-label">Current Magnitude (m/s²)</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-box">
                 <div class="stat-value" id="avgMagnitude">0.0</div>
                 <div class="stat-label">Average Magnitude (m/s²)</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-box">
                 <div class="stat-value" id="detectedPeaks">0</div>
                 <div class="stat-label">Detected Peaks</div>
             </div>
         </div>
     </div>
+
+    <img src="/bunny_lying.gif" alt="Bunny Lying" class="bunny-bottom-right">
 
     <script>
         let isRunning = false;
@@ -241,20 +268,25 @@
             }
         }
         
-        let magnitudeChart, axisChart;
+        let magnitudeChart;
         let magnitudeData = [[], []];
-        let axisData = [[], [], [], []];
         let peakAnnotations = [];
         let peakImage = new Image();
         peakImage.src = '/img.png';
         
         // Initialize graphs
         function initializeGraphs() {
+            const magnitudeGraphEl = document.getElementById('magnitudeGraph');
+            if (!magnitudeGraphEl) {
+                console.error('magnitudeGraph element not found');
+                return;
+            }
+            
             // Magnitude graph with uPlot
             const magnitudeOpts = {
                 title: 'Acceleration Magnitude',
-                width: document.getElementById('magnitudeGraph').clientWidth,
-                height: 300,
+                width: magnitudeGraphEl.clientWidth || 800,
+                height: 400,
                 scales: {
                     x: {
                         time: false
@@ -285,42 +317,7 @@
                 }
             };
             
-            magnitudeChart = new uPlot(magnitudeOpts, magnitudeData, document.getElementById('magnitudeGraph'));
-            
-            // 3-axis graph with uPlot
-            const axisOpts = {
-                title: '3-Axis Acceleration',
-                width: document.getElementById('axisGraph').clientWidth,
-                height: 300,
-                axes: [
-                    {
-                        label: 'Time (s)'
-                    },
-                    {
-                        label: 'Acceleration (m/s²)'
-                    }
-                ],
-                series: [
-                    {},
-                    {
-                        label: 'X-axis',
-                        stroke: '#e74c3c',
-                        width: 2
-                    },
-                    {
-                        label: 'Y-axis',
-                        stroke: '#27ae60',
-                        width: 2
-                    },
-                    {
-                        label: 'Z-axis',
-                        stroke: '#3498db',
-                        width: 2
-                    }
-                ]
-            };
-            
-            axisChart = new uPlot(axisOpts, axisData, document.getElementById('axisGraph'));
+            magnitudeChart = new uPlot(magnitudeOpts, magnitudeData, magnitudeGraphEl);
         }
         
         // Custom hook to draw peak annotations with images
@@ -364,26 +361,17 @@
                 if (newDataPoints.length > 0) {
                     consecutiveErrors = 0;  // Reset error counter
                     
-                    // Append all new data points at once
+                    // Add new data points
                     newDataPoints.forEach(point => {
                         magnitudeData[0].push(point.timestamp);
                         magnitudeData[1].push(point.magnitude || 0);
-                        
-                        axisData[0].push(point.timestamp);
-                        axisData[1].push(point.ax);
-                        axisData[2].push(point.ay);
-                        axisData[3].push(point.az);
                     });
                     
                     // Keep only recent data (trim old data)
-                    const maxPoints = 600; // 10 seconds at 60Hz
+                    const maxPoints = 1000;  // Keep max 1000 points in memory
                     while (magnitudeData[0].length > maxPoints) {
                         magnitudeData[0].shift();
                         magnitudeData[1].shift();
-                        axisData[0].shift();
-                        axisData[1].shift();
-                        axisData[2].shift();
-                        axisData[3].shift();
                     }
                     
                     const currentTime = newDataPoints[newDataPoints.length - 1].timestamp;
@@ -395,8 +383,6 @@
                         min: currentTime - windowSize,
                         max: currentTime
                     });
-                    
-                    axisChart.setData(axisData);
                     
                     lastTimestamp = currentTime;
                     
@@ -448,7 +434,7 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ use_real_data: true, port: 5000 })
+                    body: JSON.stringify({ use_real_data: true, port: 8000 })  // MUST use real data
                 });
                 
                 // Load initial historical data
@@ -460,14 +446,8 @@
                     magnitudeData[0] = historicalData.map(d => d.timestamp);
                     magnitudeData[1] = historicalData.map(d => d.magnitude || 0);
                     
-                    axisData[0] = historicalData.map(d => d.timestamp);
-                    axisData[1] = historicalData.map(d => d.ax);
-                    axisData[2] = historicalData.map(d => d.ay);
-                    axisData[3] = historicalData.map(d => d.az);
-                    
                     // Set initial data
                     magnitudeChart.setData(magnitudeData);
-                    axisChart.setData(axisData);
                     
                     // Set initial timestamp
                     lastTimestamp = historicalData[historicalData.length - 1].timestamp;
@@ -519,11 +499,9 @@
                 
                 // Clear uPlot data
                 magnitudeData = [[], []];
-                axisData = [[], [], [], []];
                 peakAnnotations = [];
                 
                 magnitudeChart.setData(magnitudeData);
-                axisChart.setData(axisData);
                 
                 lastDataLength = 0;
                 alert('Data cleared successfully!');
@@ -553,13 +531,7 @@
                 if (magnitudeChart) {
                     magnitudeChart.setSize({
                         width: document.getElementById('magnitudeGraph').clientWidth,
-                        height: 300
-                    });
-                }
-                if (axisChart) {
-                    axisChart.setSize({
-                        width: document.getElementById('axisGraph').clientWidth,
-                        height: 300
+                        height: 400
                     });
                 }
             });
@@ -568,9 +540,16 @@
             
             // Initialize sensitivity input
             const sensitivityInput = document.getElementById('sensitivityInput');
+            console.log('🔍 Sensitivity input element:', sensitivityInput);
             
-            sensitivityInput.addEventListener('change', async function() {
+            if (!sensitivityInput) {
+                console.error('❌ sensitivityInput element not found!');
+                return;
+            }
+            
+            sensitivityInput.addEventListener('input', async function() {
                 const newSensitivity = parseFloat(this.value);
+                console.log(`🎛️ Sensitivity changed to: ${newSensitivity}`);
                 
                 // Validate input
                 if (isNaN(newSensitivity) || newSensitivity < 0.1 || newSensitivity > 50.0) {
@@ -581,13 +560,20 @@
                 
                 try {
                     // Update sensitivity via API
-                    await fetch('/api/sensitivity', {
+                    const response = await fetch('/api/sensitivity', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({ sensitivity: newSensitivity })
                     });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        console.log(`✅ Sensitivity updated:`, result);
+                    } else {
+                        console.error('Failed to update sensitivity:', response.status);
+                    }
                 } catch (error) {
                     console.error('Failed to update sensitivity:', error);
                 }

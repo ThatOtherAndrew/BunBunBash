@@ -12,35 +12,81 @@ from collections import deque
 from typing import Dict, Optional, Callable
 
 # Import HackMIT classes
-from main import DataSource, PeakDetector, HTTPDataSource
+from main import DataSource, PeakDetector
+import socketio as socketio_client
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 
-# Adapter to convert HTTPDataSource to 3-axis format for dashboard compatibility
-class RealDataAdapter(DataSource):
-    """Adapts HTTPDataSource (z-axis only) to dashboard's 3-axis format"""
+# Client adapter to receive data from main.py's HTTPDataSource server
+class SocketIOClientDataSource(DataSource):
+    """Connects as a client to main.py's Socket.IO server to receive phone data"""
     
-    def __init__(self, port=5000):
-        self.http_source = HTTPDataSource(port=port)
+    def __init__(self, port=8000):
+        self.data_queue = asyncio.Queue()
         self.start_time = time.time()
+        self.connected = False
+        self.port = port
+        self.sio = None
+        
+    def setup_connection(self):
+        """Setup Socket.IO connection - called after loop is available"""
+        global loop
+        self.sio = socketio_client.Client()
+        
+        @self.sio.event
+        def connect():
+            print(f"✅ Connected to main.py server on port {self.port}")
+            self.connected = True
+            
+        @self.sio.event
+        def disconnect():
+            print("❌ Disconnected from main.py server")
+            self.connected = False
+            
+        @self.sio.on('data')
+        def on_data(data):
+            # Forward the data to our async queue
+            import json
+            try:
+                parsed = json.loads(data)
+                if isinstance(parsed, list):
+                    print(f"📡 Received batch of {len(parsed)} data points from main.py")
+                    # Process ALL data points, not just the first one!
+                    for i, item in enumerate(parsed):
+                        z_value = item.get('z', 0)
+                        print(f"   Point {i+1}/{len(parsed)}: z={z_value:.4f}")
+                        if loop:
+                            asyncio.run_coroutine_threadsafe(self.data_queue.put(z_value), loop)
+                        else:
+                            print("⚠️ Loop not available yet")
+                    print(f"✅ Queued all {len(parsed)} points")
+            except Exception as e:
+                print(f"❌ Error parsing data: {e}")
+        
+        # Connect to main.py's server
+        try:
+            print(f"🔌 Connecting to main.py server at http://localhost:{self.port}...")
+            self.sio.connect(f'http://localhost:{self.port}')
+        except Exception as e:
+            print(f"❌ Could not connect to main.py server: {e}")
     
     async def read(self) -> Dict[str, float]:
-        """Read z-axis data from HTTPDataSource and format for dashboard"""
-        z_value = await self.http_source.read()
+        """Read z-axis data from the queue"""
+        z_value = await self.data_queue.get()
+        print(f"✅ Processing z-value: {z_value:.4f} (Queue size: {self.data_queue.qsize()})")
         current_time = time.time() - self.start_time
         
-        # Return z-axis as primary data, with x and y at 0
         return {
             'timestamp': current_time,
-            'ax': 0.0,  # No x-axis data from real source
-            'ay': 0.0,  # No y-axis data from real source  
+            'ax': 0.0,
+            'ay': 0.0,
             'az': round(z_value, 3)
         }
 
 class MagnitudeDataSource(DataSource):
     """Adapter to convert 3-axis data to single magnitude for main.py PeakDetector"""
     
-    def __init__(self, acceleration_source: RealDataAdapter):
+    def __init__(self, acceleration_source: DataSource):
         self.acceleration_source = acceleration_source
         self.latest_data = None
         
@@ -57,7 +103,7 @@ class MagnitudeDataSource(DataSource):
 class DashboardPeakAdapter:
     """Modular adapter that wraps main.py PeakDetector without inheritance"""
     
-    def __init__(self, acceleration_source: RealDataAdapter):
+    def __init__(self, acceleration_source: DataSource):
         self.acceleration_source = acceleration_source
         self.magnitude_source = MagnitudeDataSource(acceleration_source)
         self.peak_detector = PeakDetector(self.magnitude_source)
@@ -119,7 +165,7 @@ class DashboardPeakAdapter:
 # Global data storage and async components
 acceleration_data = deque(maxlen=1000)  # Store more data for smooth 60Hz operation
 peak_detector: Optional[DashboardPeakAdapter] = None
-data_source: Optional[RealDataAdapter] = None
+data_source: Optional[DataSource] = None
 loop = None
 data_thread = None
 
@@ -161,7 +207,11 @@ def start_async_data_collection(use_real_data=True, port=5000):
         loop.run_until_complete(data_collection_loop())
     
     # Initialize components
-    data_source = RealDataAdapter(port=port) if use_real_data else SimulatedDataSource()
+    if use_real_data:
+        data_source = SocketIOClientDataSource(port=port)
+        data_source.setup_connection()  # Setup connection after loop exists
+    else:
+        data_source = SimulatedDataSource()
     peak_detector = DashboardPeakAdapter(data_source)
     
     # Set up peak callback

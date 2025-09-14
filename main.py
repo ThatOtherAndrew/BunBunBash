@@ -50,6 +50,7 @@ class HTTPDataSource(DataSource):
                 json_data = json.loads(data)
                 for e in json_data:
                     await self.data_queue.put(e['z'])
+                await self.sio.emit('data', data)
             except (ValueError, TypeError, KeyError) as e:
                 print(f'Error processing data: {e}')
 
