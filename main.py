@@ -2,13 +2,13 @@ from abc import ABC, abstractmethod
 import keyboard
 import random
 import asyncio
-from quart import Quart, request, jsonify, send_file
-import threading
-import logging
+from quart import Quart, send_file
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 import socketio
+import subprocess
 import json
+import os
 
 class DataSource(ABC):
     @abstractmethod
@@ -69,7 +69,7 @@ class HTTPDataSource(DataSource):
 
 class PeakDetector:
     def __init__(self, data_source: DataSource) -> None:
-        self.sensitivity = 0.3
+        self.sensitivity = 0.1
         self.window_length = 16
         self.window = [float() for _ in range(self.window_length)]
         self.data_source = data_source
@@ -80,7 +80,7 @@ class PeakDetector:
 
     async def tick(self) -> float:
         new_sample = await self.data_source.read()
-        if new_sample > self.sensitivity:
+        if new_sample >= self.sensitivity:
             self.on_peak(new_sample)
         self.window.append(await self.data_source.read())
         self.window.pop(0)
@@ -90,7 +90,10 @@ class PeakDetector:
     @staticmethod
     def on_peak(sample: float):
         print('peak:', sample)
-        keyboard.press(' ')
+        if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
+            subprocess.run(["ydotool", "key", "57:1", "57:0"])
+        else:
+            keyboard.press('space')
 
 
 if __name__ == '__main__':
