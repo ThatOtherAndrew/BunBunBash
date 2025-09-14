@@ -90,15 +90,16 @@ class MagnitudeDataSource(DataSource):
         self.acceleration_source = acceleration_source
         self.latest_data = None
         
-    async def read(self) -> float:
+    async def read(self) -> tuple[float, str]:
         """Return magnitude from acceleration data"""
         data_point = await self.acceleration_source.read()
         self.latest_data = data_point
-        
+
         # For real data, magnitude is just the z-axis value since x,y are 0
         # But we calculate properly in case we add more axes later
         magnitude = math.sqrt(data_point['ax']**2 + data_point['ay']**2 + data_point['az']**2)
-        return magnitude
+        # Default to device 'A' for dashboard compatibility
+        return magnitude, 'A'
 
 class DashboardPeakAdapter:
     """Modular adapter that wraps main.py PeakDetector without inheritance"""

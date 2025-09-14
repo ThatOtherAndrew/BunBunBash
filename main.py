@@ -19,7 +19,7 @@ class DataSource(ABC):
 class RandomDataSource(DataSource):
     async def read(self) -> tuple[float, str]:
         await asyncio.sleep(0.05)
-        return random.random() * (2 if random.random() < 0.02 else 0.1)
+        return random.random() * (2 if random.random() < 0.02 else 0.1), 'a'
 
 
 class HTTPDataSource(DataSource):
@@ -77,23 +77,30 @@ class HTTPDataSource(DataSource):
 
 class PeakDetector:
     def __init__(self, data_source: DataSource) -> None:
-        self.window_length = 32
-        self.window = [0.0 for _ in range(self.window_length)]
         self.data_source = data_source
-        
+
+        # Configuration parameters
+        self.window_length = 32
         self.baseline_window_length = 64
-        self.baseline_window = [0.0 for _ in range(self.baseline_window_length)]
-        
         self.threshold_multiplier = 1.5
         self.min_peak_height = 0.1
-        
         self.debounce_samples = 6
-        self.samples_since_peak = self.debounce_samples
-        
         self.smoothing_factor = 0.15
-        self.smoothed_value = 0.0
-        
-        self.variance_window = [0.0 for _ in range(32)]
+        self.variance_window_length = 32
+
+        # Per-device state tracking
+        self.device_states = {}
+
+    def _init_device_state(self, key: str) -> None:
+        """Initialize state for a new device"""
+        if key not in self.device_states:
+            self.device_states[key] = {
+                'window': [0.0 for _ in range(self.window_length)],
+                'baseline_window': [0.0 for _ in range(self.baseline_window_length)],
+                'variance_window': [0.0 for _ in range(self.variance_window_length)],
+                'samples_since_peak': self.debounce_samples,
+                'smoothed_value': 0.0
+            }
 
     async def run(self) -> None:
         while True:
@@ -102,37 +109,45 @@ class PeakDetector:
     async def tick(self) -> float:
         (new_sample, key) = await self.data_source.read()
         new_sample = abs(new_sample)
-        
-        self.smoothed_value = (self.smoothing_factor * new_sample + 
-                               (1 - self.smoothing_factor) * self.smoothed_value)
-        
-        self.window.append(self.smoothed_value)
-        self.window.pop(0)
-        
-        self.baseline_window.append(self.smoothed_value)
-        self.baseline_window.pop(0)
-        
-        self.variance_window.append(self.smoothed_value)
-        self.variance_window.pop(0)
-        
-        baseline = sum(self.baseline_window) / len(self.baseline_window)
-        
-        variance_mean = sum(self.variance_window) / len(self.variance_window)
-        variance = sum((x - variance_mean) ** 2 for x in self.variance_window) / len(self.variance_window)
+
+        # Initialize device state if needed
+        self._init_device_state(key)
+        device_state = self.device_states[key]
+
+        # Update smoothed value for this device
+        device_state['smoothed_value'] = (self.smoothing_factor * new_sample +
+                                        (1 - self.smoothing_factor) * device_state['smoothed_value'])
+
+        # Update windows for this device
+        device_state['window'].append(device_state['smoothed_value'])
+        device_state['window'].pop(0)
+
+        device_state['baseline_window'].append(device_state['smoothed_value'])
+        device_state['baseline_window'].pop(0)
+
+        device_state['variance_window'].append(device_state['smoothed_value'])
+        device_state['variance_window'].pop(0)
+
+        # Calculate thresholds for this device
+        baseline = sum(device_state['baseline_window']) / len(device_state['baseline_window'])
+
+        variance_mean = sum(device_state['variance_window']) / len(device_state['variance_window'])
+        variance = sum((x - variance_mean) ** 2 for x in device_state['variance_window']) / len(device_state['variance_window'])
         std_dev = variance ** 0.5
-        
+
         dynamic_threshold = baseline + (self.threshold_multiplier * std_dev)
         absolute_threshold = max(dynamic_threshold, self.min_peak_height)
-        
-        self.samples_since_peak += 1
-        
-        if (self.smoothed_value > absolute_threshold and 
-            self.samples_since_peak >= self.debounce_samples):
-            
-            recent_max = max(self.window[-3:])
-            if recent_max == self.smoothed_value:
-                self.on_peak(self.smoothed_value, key)
-                self.samples_since_peak = 0
+
+        device_state['samples_since_peak'] += 1
+
+        # Check for peak detection for this device
+        if (device_state['smoothed_value'] > absolute_threshold and
+            device_state['samples_since_peak'] >= self.debounce_samples):
+
+            recent_max = max(device_state['window'][-3:])
+            if recent_max == device_state['smoothed_value']:
+                self.on_peak(device_state['smoothed_value'], key)
+                device_state['samples_since_peak'] = 0
 
         return new_sample
 
