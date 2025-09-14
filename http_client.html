@@ -1,69 +1,62 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
-    <style>
-        * {
-            font-family: monospace;
-            font-size: 20px;
-        }
-        body {
-            padding: 20px;
-            text-align: center;
-        }
-        button {
-            padding: 15px 30px;
-            font-size: 24px;
-            margin: 20px;
-        }
-        p {
-            margin: 10px 0;
-        }
-    </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+" crossorigin="anonymous"></script>
 </head>
 <body>
-    <h1>Phone Accelerometer</h1>
+    <p id="x"></p>
+    <p id="y"></p>
+    <p id="z"></p>
     <button onclick="start()">Start</button>
-    <p id="x">x: 0.00</p>
-    <p id="y">y: 0.00</p>
-    <p id="z">z: 0.00</p>
-    
-    <script>
-        async function requestPermission() {
-            if (typeof DeviceOrientationEvent !== "undefined" && 
-                typeof DeviceOrientationEvent.requestPermission === "function") {
-                const permission = await DeviceOrientationEvent.requestPermission();
-                return permission === "granted";
-            }
-            return true;
-        }
+    <select id="key" value="a" onchange="socket.emit('key', document.getElementById('key').value)">
+    <option value="a">A</option>
+    <option value="b">B</option>
+    <option value="c">C</option>
+    </select>
+  </body>
+  <style>
+    * {
+      font-family: monospace;
+    }
+  </style>
+  <script>
+    async function requestPermission() {
+      if (
+        typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function"
+      ) {
+        const permission = await DeviceOrientationEvent.requestPermission();
+        return permission === "granted";
+      }
+      return true;
+    }
 
         const socket = io();
 
-        async function start() {
-            const hasPermission = await requestPermission();
-            if (hasPermission) {
-                window.addEventListener("devicemotion", handleMotion);
-                document.querySelector('button').textContent = 'Streaming...';
-            }
-        }
+    async function start() {
+      const hasPermission = await requestPermission();
+      window.addEventListener("devicemotion", handleMotion);
+      socket.emit("key", document.getElementById("key").value);
+    }
 
         function handleMotion(event) {
             const accel = event.acceleration || event.accelerationIncludingGravity;
-            if (accel) {
-                document.getElementById("x").innerHTML = `x: ${accel.x?.toFixed(2) || '0.00'}`;
-                document.getElementById("y").innerHTML = `y: ${accel.y?.toFixed(2) || '0.00'}`;
-                document.getElementById("z").innerHTML = `z: ${accel.z?.toFixed(2) || '0.00'}`;
-                
-                socket.emit("data", JSON.stringify([{
-                    x: accel.x || 0,
-                    y: accel.y || 0,
-                    z: accel.z || 0,
-                }]));
-            }
+      document.getElementById("x").innerHTML =
+        `x: ${accel.x < 0 ? "" : "+"}${accel.x.toFixed(2)}`;
+      document.getElementById("y").innerHTML =
+        `y: ${accel.y < 0 ? "" : "+"}${accel.y.toFixed(2)}`;
+      document.getElementById("z").innerHTML =
+        `z: ${accel.z < 0 ? "" : "+"}${accel.z.toFixed(2)}`;
+      socket.emit("data", JSON.stringify([
+          {
+            x: accel.x,
+            y: accel.y,
+            z: accel.z,
+          },
+        ]),
+      );
         }
     </script>
-</body>
 </html>

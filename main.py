@@ -12,12 +12,12 @@ import os
 
 class DataSource(ABC):
     @abstractmethod
-    async def read(self) -> float:
+    async def read(self) -> tuple[float, str]:
         pass
 
 
 class RandomDataSource(DataSource):
-    async def read(self) -> float:
+    async def read(self) -> tuple[float, str]:
         await asyncio.sleep(0.05)
         return random.random() * (2 if random.random() < 0.02 else 0.1)
 
@@ -28,6 +28,8 @@ class HTTPDataSource(DataSource):
         self.app = Quart(__name__)
         self.data_queue = asyncio.Queue()
         self.server_started = False
+        # {sid: key (A, B, C)}
+        self.clients = {}
 
         self.sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins="*")
         self.socket_app = socketio.ASGIApp(self.sio, self.app)
@@ -38,18 +40,23 @@ class HTTPDataSource(DataSource):
 
         @self.sio.event
         async def connect(sid, environ):
-            print(f'Client {sid} connected')
+            self.clients[sid] = 'A'
 
         @self.sio.event
         async def disconnect(sid):
             print(f'Client {sid} disconnected')
+            del self.clients[sid]
+        
+        @self.sio.event
+        async def key(sid, key):
+            self.clients[sid] = key
 
         @self.sio.event
         async def data(sid, data):
             try:
                 json_data = json.loads(data)
                 for e in json_data:
-                    await self.data_queue.put(e['z'])
+                    await self.data_queue.put((e['z'], self.clients[sid]))
                 await self.sio.emit('data', data)
             except (ValueError, TypeError, KeyError) as e:
                 print(f'Error processing data: {e}')
@@ -63,7 +70,7 @@ class HTTPDataSource(DataSource):
             # cfg.loglevel = "error"
             await serve(self.socket_app, cfg)
 
-    async def read(self) -> float:
+    async def read(self) -> tuple[float, str]:
         if not self.server_started:
             asyncio.create_task(self._start_server())
         return await self.data_queue.get()
@@ -93,7 +100,8 @@ class PeakDetector:
             await self.tick()
 
     async def tick(self) -> float:
-        new_sample = abs(await self.data_source.read())
+        (new_sample, key) = await self.data_source.read()
+        new_sample = abs(new_sample)
         
         self.smoothed_value = (self.smoothing_factor * new_sample + 
                                (1 - self.smoothing_factor) * self.smoothed_value)
@@ -123,18 +131,19 @@ class PeakDetector:
             
             recent_max = max(self.window[-3:])
             if recent_max == self.smoothed_value:
-                self.on_peak(self.smoothed_value)
+                self.on_peak(self.smoothed_value, key)
                 self.samples_since_peak = 0
 
         return new_sample
 
     @staticmethod
-    def on_peak(sample: float):
+    def on_peak(sample: float, key: str):
         print('peak:', sample)
         if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
+            # TODO: press the right key on wayland. nixos.. 
             subprocess.run(["ydotool", "key", "57:1", "57:0"])
         else:
-            keyboard.press('space')
+            keyboard.write(key)
 
 
 if __name__ == '__main__':
