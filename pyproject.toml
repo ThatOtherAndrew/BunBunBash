@@ -7,4 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "keyboard>=0.13.5",
     "flask>=3.0.0",
+    "aiohttp>=3.8.0",
+    "quart>=0.20.0",
+    "hypercorn>=0.17.3",
 ]
