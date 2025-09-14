@@ -12,4 +12,6 @@ dependencies = [
     "hypercorn>=0.17.3",
     "matplotlib>=3.10.6",
     "python-socketio>=5.11.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
 ]

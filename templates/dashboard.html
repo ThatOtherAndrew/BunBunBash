@@ -387,27 +387,6 @@
                 const x = u.valToPos(peak.timestamp, 'x', true);
                 const y = u.valToPos(peak.z_value, 'y', true);
                 
-                // Draw vertical red dashed line at peak timestamp
-                if (x >= left && x <= left + width) {
-                    ctx.setLineDash([5, 5]); // 5px dash, 5px gap
-                    ctx.strokeStyle = '#ff0000'; // Red color
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(x, top);
-                    ctx.lineTo(x, top + height);
-                    ctx.stroke();
-                    ctx.setLineDash([]); // Reset line dash
-                }
-                
-                // Draw red highlighted debounce box (if debounce_end is available)
-                if (peak.debounce_end) {
-                    const debounceEndX = u.valToPos(peak.debounce_end, 'x', true);
-                    if (debounceEndX > x && x >= left && debounceEndX <= left + width) {
-                        ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; // Semi-transparent red
-                        ctx.fillRect(x, top, debounceEndX - x, height);
-                    }
-                }
-                
                 if (x >= left && x <= left + width && y >= top && y <= top + height) {
                     // Draw peak image
                     if (peakImage.complete) {
@@ -597,15 +576,7 @@
                 
                 // Load initial historical data
                 const historyResponse = await fetch(`/api/data/history?limit=100`);
-                if (!historyResponse.ok) {
-                    throw new Error(`Failed to fetch history: ${historyResponse.status}`);
-                }
                 const historicalDataByKey = await historyResponse.json();
-                
-                // Check if response is an error object
-                if (historicalDataByKey.error) {
-                    throw new Error(`Backend error: ${historicalDataByKey.message || 'Unknown error'}`);
-                }
                 
                 let hasHistoricalData = false;
                 let maxTimestamp = 0;
@@ -613,7 +584,7 @@
                 // Process historical data for each key
                 Object.keys(historicalDataByKey).forEach(key => {
                     const keyData = historicalDataByKey[key];
-                    if (Array.isArray(keyData) && keyData.length > 0) {
+                    if (keyData && keyData.length > 0) {
                         hasHistoricalData = true;
                         addKeySeries(key);
                         

@@ -34,21 +34,21 @@ class SocketIOClientDataSource(DataSource):
             import socketio
             import threading
             
-            print(f"🔌 Connecting to main.py server at http://localhost:{self.port}...")
+            # Connecting to main.py server
             
             # Create Socket.IO client
             self.sio = socketio.Client()
             
             @self.sio.event
             def connect():
-                print(f"✅ Connected to main.py Socket.IO server on port {self.port}")
+                # Connected to main.py Socket.IO server
                 self.connected = True
                 # Select a default key
                 self.sio.emit('key', 'A')
             
             @self.sio.event
             def disconnect():
-                print("❌ Disconnected from main.py server")
+                # Disconnected from main.py server
                 self.connected = False
             
             @self.sio.event
@@ -65,7 +65,7 @@ class SocketIOClientDataSource(DataSource):
                             if loop:
                                 asyncio.run_coroutine_threadsafe(self.data_queue.put((z_value, key)), loop)
                 except Exception as e:
-                    print(f"❌ Error processing data: {e}")
+                    pass  # Error processing data
             
             # Connect in a separate thread
             def connect_thread():
@@ -73,7 +73,7 @@ class SocketIOClientDataSource(DataSource):
                     self.sio.connect(f'http://localhost:{self.port}')
                     self.sio.wait()  # Keep connection alive
                 except Exception as e:
-                    print(f"⚠️ Could not connect to main.py server: {e}")
+                    pass  # Could not connect to main.py server
                     self.connected = False
             
             thread = threading.Thread(target=connect_thread, daemon=True)
@@ -83,7 +83,7 @@ class SocketIOClientDataSource(DataSource):
             time.sleep(0.5)
             
         except Exception as e:
-            print(f"⚠️ Could not setup connection: {e}")
+            pass  # Could not setup connection
             self.connected = False
     
     def receive_data(self, data):
@@ -93,41 +93,41 @@ class SocketIOClientDataSource(DataSource):
                 import json
                 parsed = json.loads(data)
                 if isinstance(parsed, list):
-                    print(f"📡 Received batch of {len(parsed)} data points from main.py")
+                    # Received batch of data points from main.py
                     # Process ALL data points with their keys
                     for i, item in enumerate(parsed):
                         z_value = item.get('z', 0)
                         key = item.get('key', 'A')  # Get the device key
-                        print(f"   Point {i+1}/{len(parsed)}: z={z_value:.4f}, key={key}")
+                        # Processing data point
                         if loop:
                             asyncio.run_coroutine_threadsafe(self.data_queue.put((z_value, key)), loop)
                         else:
-                            print("⚠️ Loop not available yet")
-                    print(f"✅ Queued all {len(parsed)} points")
+                            pass  # Loop not available yet
+                    # Queued all points
                 else:
                     # Single data point
                     z_value = parsed.get('z', 0) if isinstance(parsed, dict) else parsed
                     key = parsed.get('key', 'A') if isinstance(parsed, dict) else 'A'
-                    print(f"📡 Received single point: z={z_value}, key={key}")
+                    # Received single point
                     if loop:
                         asyncio.run_coroutine_threadsafe(self.data_queue.put((z_value, key)), loop)
                     else:
-                        print("⚠️ Loop not available yet")
+                        pass  # Loop not available yet
         except Exception as e:
-            print(f"❌ Could not process data: {e}")
+            pass  # Could not process data
     
     def setup_test_connection(self):
         """Setup connection with test data for HTTPDataSource"""
         try:
-            print(f"🔌 Testing connection to main.py server at http://localhost:{self.port}...")
+            # Testing connection to main.py server
             self.connected = True
         except Exception as e:
-            print(f"❌ Could not connect to main.py server: {e}")
+            pass  # Could not connect to main.py server
     
     async def read(self) -> tuple[float, str]:
         """Read z-axis data and key from the queue"""
         z_value, key = await self.data_queue.get()
-        print(f"✅ Processing z-value: {z_value:.4f}, key: {key} (Queue size: {self.data_queue.qsize()})")
+        # Processing z-value
         return z_value, key
 
 class MultiKeyDataCollector:
@@ -192,26 +192,22 @@ class DashboardDataCollector:
             # Override on_peak to capture peaks
             original_on_peak = self.peak_detectors[key]['detector'].on_peak
             def make_capture_peak(device_key):
-                def capture_peak(sample, k=None):
+                def capture_peak(sample, k=None, info=None):
                     # Use current time when peak is detected, not when detector was created
                     peak_time = time.time() - self.start_time
                     peak_data = {
                         'timestamp': peak_time,
                         'z_value': round(sample, 3),
                         'key': device_key,
-                        'peak_type': 'detected',
-                        'debounce_end': peak_time + DEBOUNCE_DURATION
+                        'peak_type': 'detected'
                     }
                     self.detected_peaks.append(peak_data)
                     
                     if self.peak_callback:
                         self.peak_callback(peak_data)
                     
-                    # Call original
-                    if k is not None:
-                        original_on_peak(sample, k)
-                    else:
-                        original_on_peak(sample, device_key)
+                    # Call original with all parameters
+                    original_on_peak(sample, k or device_key, info)
                 return capture_peak
             
             self.peak_detectors[key]['detector'].on_peak = make_capture_peak(key)
@@ -247,20 +243,20 @@ class DashboardDataCollector:
 
 # Global data storage and async components
 # Store data separately for each key (A, B, C)
-multi_key_data = {}  # {'A': deque(), 'B': deque(), 'C': deque()}
-all_data = []
-data_collector = None
-data_source = None
-data_thread = None
+multi_key_data = {
+    'A': deque(maxlen=1000),
+    'B': deque(maxlen=1000), 
+    'C': deque(maxlen=1000)
+}
+all_data = deque(maxlen=3000)  # Combined data for statistics
+data_collector: Optional[DashboardDataCollector] = None
+data_source: Optional[DataSource] = None
 loop = None
-
-# Configuration
-DEBOUNCE_DURATION = 0.2  # 200ms debounce period in seconds
+data_thread = None
 
 def start_async_data_collection(use_real_data=True, port=8000):
     """Start async data collection in background thread
     
-{{ ... }}
     Args:
         use_real_data: If True, use HTTPDataSource. If False, use simulated data.
         port: Port for HTTPDataSource when using real data
@@ -286,10 +282,9 @@ def start_async_data_collection(use_real_data=True, port=8000):
         asyncio.set_event_loop(loop)
         
         async def data_collection_loop():
-            global multi_key_data, all_data
-            print(f"🔄 Starting {'real' if use_real_data else 'simulated'} data collection...")
+            # Starting data collection
             if use_real_data:
-                print(f"📡 Waiting for data on port {port}...")
+                pass  # Waiting for data
             while True:
                 try:
                     data_point = await data_collector.tick()
@@ -305,7 +300,7 @@ def start_async_data_collection(use_real_data=True, port=8000):
                     if not use_real_data:
                         await asyncio.sleep(0.016)  # Only sleep for simulated data
                 except Exception as e:
-                    print(f"❌ Error in data collection: {e}")
+                    pass  # Error in data collection
                     import traceback
                     traceback.print_exc()
                     await asyncio.sleep(0.1)
@@ -314,7 +309,7 @@ def start_async_data_collection(use_real_data=True, port=8000):
     
     # Set up peak callback
     def on_peak_detected(peak_data):
-        print(f"Peak detected: {peak_data['z_value']:.3f} on key {peak_data['key']} at {peak_data['timestamp']:.2f}s")
+        pass  # Peak detected
     
     data_collector.set_peak_callback(on_peak_detected)
     
@@ -390,19 +385,12 @@ def get_data_since(timestamp):
 @app.route('/api/data/history')
 def get_data_history():
     """Get historical data for all keys"""
-    try:
-        limit = request.args.get('limit', 500, type=int)
-        result = {}
-        
-        if multi_key_data:
-            for key, data_deque in multi_key_data.items():
-                if data_deque:
-                    result[key] = list(data_deque)[-limit:]
-        
-        return jsonify(result)
-    except Exception as e:
-        print(f"Error in get_data_history: {e}")
-        return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
+    limit = request.args.get('limit', 500, type=int)
+    result = {}
+    for key, data_deque in multi_key_data.items():
+        if data_deque:
+            result[key] = list(data_deque)[-limit:]
+    return jsonify(result)
 
 @app.route('/api/peaks')
 def get_detected_peaks():
@@ -520,18 +508,18 @@ class RealPhoneDataSource(DataSource):
         
         @self.sio.event
         def connect():
-            print(f"📱 Connected to main.py, waiting for real phone data on port {self.port}")
+            # Connected to main.py, waiting for real phone data
             self.connected = True
         
         @self.sio.event
         def disconnect():
-            print("❌ Disconnected from main.py")
+            # Disconnected from main.py
             self.connected = False
         
         @self.sio.event
         def data(raw_data):
             """Receive data echoed by main.py from phones"""
-            print(f"📡 Raw data received: {raw_data[:100] if isinstance(raw_data, str) else raw_data}")
+            # Raw data received
             try:
                 import json
                 parsed = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
@@ -543,15 +531,15 @@ class RealPhoneDataSource(DataSource):
                         key = item.get('key', 'A')  # Get key if sent by main.py
                         # Normalize key to uppercase for consistency
                         key = key.upper() if isinstance(key, str) else key
-                        print(f"📡 Parsed: z={z_value:.3f}, key={key}")
+                        # Parsed data point
                         if loop:
                             # Queue the data with the actual key
                             asyncio.run_coroutine_threadsafe(
                                 self.data_queue.put((z_value, key)), loop)
                         else:
-                            print("⚠️ Loop not ready yet")
+                            pass  # Loop not ready yet
             except Exception as e:
-                print(f"❌ Error processing phone data: {e}")
+                pass  # Error processing phone data
         
         def connect_thread():
             try:
@@ -561,7 +549,7 @@ class RealPhoneDataSource(DataSource):
                 self.sio.emit('key', 'A')  # Need to register to receive broadcasts
                 self.sio.wait()
             except Exception as e:
-                print(f"⚠️ Could not connect to main.py: {e}")
+                pass  # Could not connect to main.py
         
         thread = threading.Thread(target=connect_thread, daemon=True)
         thread.start()
@@ -571,7 +559,7 @@ class RealPhoneDataSource(DataSource):
         """Wait for real phone data"""
         # This will block until real data arrives from a phone
         z_value, key = await self.data_queue.get()
-        print(f"📱 Real data: z={z_value:.3f}, key={key}")
+        # Real data received
         return z_value, key
 
 # Keep original simulated source for testing
@@ -612,7 +600,10 @@ if __name__ == '__main__':
     # Don't auto-start, let client control via API
     
     try:
-        app.run(host='0.0.0.0', port=8080, debug=True, threaded=True)
+        import logging
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
+        app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
     except KeyboardInterrupt:
         print("\n⏹️  Shutting down dashboard...")
         stop_async_data_collection()
