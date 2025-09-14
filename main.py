@@ -35,8 +35,8 @@ class HTTPDataSource(DataSource):
         async def handle_data():
             try:
                 json_data = await request.get_json()
-                value = float(json_data)
-                await self.data_queue.put(value)
+                for e in json_data:
+                    await self.data_queue.put(e['z'])
                 return jsonify({'status': 'success'})
             except (ValueError, TypeError):
                 return jsonify({'error': 'Invalid JSON or non-numeric value'}), 400
@@ -47,7 +47,7 @@ class HTTPDataSource(DataSource):
             print(f'HTTPDataSource listening on http://0.0.0.0:{self.port}/')
             cfg = Config()
             cfg.bind = [f"0.0.0.0:{self.port}"]
-            cfg.loglevel = "error"
+            # cfg.loglevel = "error"
             await serve(self.app, cfg)
 
     async def read(self) -> float:

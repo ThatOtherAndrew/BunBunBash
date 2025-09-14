@@ -1,47 +1,58 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body>
-    <p id="x"></p> <p id="y"></p> <p id="z"></p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  </head>
+  <body>
+    <p id="x"></p>
+    <p id="y"></p>
+    <p id="z"></p>
     <button onclick="start()">Start</button>
-</body>
-<style>
+  </body>
+  <style>
     * {
-        font-family: monospace;
+      font-family: monospace;
     }
-</style>
-<script>
+  </style>
+  <script>
     async function requestPermission() {
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            const permission = await DeviceOrientationEvent.requestPermission();
-            return permission === 'granted';
-        }
-        return true;
+      if (
+        typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function"
+      ) {
+        const permission = await DeviceOrientationEvent.requestPermission();
+        return permission === "granted";
+      }
+      return true;
     }
 
     async function start() {
-        const hasPermission = await requestPermission();
-        window.addEventListener('devicemotion', handleMotion);
+      const hasPermission = await requestPermission();
+      window.addEventListener("devicemotion", handleMotion);
     }
 
     function handleMotion(event) {
-        const accel = event.acceleration || event.accelerationIncludingGravity;
-        document.getElementById('x').innerHTML = `x: ${accel.x < 0 ? '' : '+'}${accel.x.toFixed(2)}`;
-        document.getElementById('y').innerHTML = `y: ${accel.y < 0 ? '' : '+'}${accel.y.toFixed(2)}`;
-        document.getElementById('z').innerHTML = `z: ${accel.z < 0 ? '' : '+'}${accel.z.toFixed(2)}`;
-        fetch('/data', {
-            method: 'POST',
-            body: JSON.stringify([
-                {
-                    x: accel.x,
-                    y: accel.y,
-                    z: accel.z
-                }
-            ])
-        })
+      const accel = event.acceleration || event.accelerationIncludingGravity;
+      document.getElementById("x").innerHTML =
+        `x: ${accel.x < 0 ? "" : "+"}${accel.x.toFixed(2)}`;
+      document.getElementById("y").innerHTML =
+        `y: ${accel.y < 0 ? "" : "+"}${accel.y.toFixed(2)}`;
+      document.getElementById("z").innerHTML =
+        `z: ${accel.z < 0 ? "" : "+"}${accel.z.toFixed(2)}`;
+      fetch("/data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify([
+          {
+            x: accel.x,
+            y: accel.y,
+            z: accel.z,
+          },
+        ]),
+      });
     }
-</script>
+  </script>
 </html>
