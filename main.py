@@ -69,21 +69,61 @@ class HTTPDataSource(DataSource):
 
 class PeakDetector:
     def __init__(self, data_source: DataSource) -> None:
-        self.sensitivity = 0.1
-        self.window_length = 16
-        self.window = [float() for _ in range(self.window_length)]
+        self.window_length = 32
+        self.window = [0.0 for _ in range(self.window_length)]
         self.data_source = data_source
+        
+        self.baseline_window_length = 64
+        self.baseline_window = [0.0 for _ in range(self.baseline_window_length)]
+        
+        self.threshold_multiplier = 1.5
+        self.min_peak_height = 0.1
+        
+        self.debounce_samples = 6
+        self.samples_since_peak = self.debounce_samples
+        
+        self.smoothing_factor = 0.15
+        self.smoothed_value = 0.0
+        
+        self.variance_window = [0.0 for _ in range(32)]
 
     async def run(self) -> None:
         while True:
             await self.tick()
 
     async def tick(self) -> float:
-        new_sample = await self.data_source.read()
-        if new_sample >= self.sensitivity:
-            self.on_peak(new_sample)
-        self.window.append(new_sample)
+        new_sample = abs(await self.data_source.read())
+        
+        self.smoothed_value = (self.smoothing_factor * new_sample + 
+                               (1 - self.smoothing_factor) * self.smoothed_value)
+        
+        self.window.append(self.smoothed_value)
         self.window.pop(0)
+        
+        self.baseline_window.append(self.smoothed_value)
+        self.baseline_window.pop(0)
+        
+        self.variance_window.append(self.smoothed_value)
+        self.variance_window.pop(0)
+        
+        baseline = sum(self.baseline_window) / len(self.baseline_window)
+        
+        variance_mean = sum(self.variance_window) / len(self.variance_window)
+        variance = sum((x - variance_mean) ** 2 for x in self.variance_window) / len(self.variance_window)
+        std_dev = variance ** 0.5
+        
+        dynamic_threshold = baseline + (self.threshold_multiplier * std_dev)
+        absolute_threshold = max(dynamic_threshold, self.min_peak_height)
+        
+        self.samples_since_peak += 1
+        
+        if (self.smoothed_value > absolute_threshold and 
+            self.samples_since_peak >= self.debounce_samples):
+            
+            recent_max = max(self.window[-3:])
+            if recent_max == self.smoothed_value:
+                self.on_peak(self.smoothed_value)
+                self.samples_since_peak = 0
 
         return new_sample
 
