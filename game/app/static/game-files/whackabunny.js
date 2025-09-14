@@ -536,6 +536,9 @@ function initializeSceneryBunnies() {
     // Position the bunnies
     updateSceneryBunniesPosition();
     
+    // Show scenery bunnies initially
+    showSceneryBunnies();
+    
     console.log('Scenery bunnies initialized');
 }
 
@@ -564,6 +567,26 @@ function updateSceneryBunniesPosition() {
     // Position bunny3 in the center (horizontally flipped)
     bunny3.style.left = (containerWidth * 0.27) + 'px';
     bunny3.style.bottom = '25px';
+}
+
+function hideSceneryBunnies() {
+    const bunny1 = document.getElementById('scenery-bunny1');
+    const bunny2 = document.getElementById('scenery-bunny2');
+    const bunny3 = document.getElementById('scenery-bunny3');
+    
+    if (bunny1) bunny1.style.display = 'none';
+    if (bunny2) bunny2.style.display = 'none';
+    if (bunny3) bunny3.style.display = 'none';
+}
+
+function showSceneryBunnies() {
+    const bunny1 = document.getElementById('scenery-bunny1');
+    const bunny2 = document.getElementById('scenery-bunny2');
+    const bunny3 = document.getElementById('scenery-bunny3');
+    
+    if (bunny1) bunny1.style.display = 'block';
+    if (bunny2) bunny2.style.display = 'block';
+    if (bunny3) bunny3.style.display = 'block';
 }
 
 function updateMusicSpeed() {
@@ -613,6 +636,71 @@ function triggerRedFlash() {
     }
     
     animateFlash();
+}
+
+// Logo overlay system
+function createLogoOverlay() {
+    const gameContainer = document.querySelector('.game-container');
+    if (!gameContainer) return;
+    
+    // Create logo overlay
+    const logoOverlay = document.createElement('div');
+    logoOverlay.id = 'logo-overlay';
+    logoOverlay.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(245, 245, 245, 0.95);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        transition: opacity 0.5s ease-out;
+    `;
+    
+    // Create logo image
+    const logoImg = document.createElement('img');
+    logoImg.src = '/static/images/bunbunbash.png';
+    logoImg.alt = 'Bun Bun Bash';
+    logoImg.style.cssText = `
+        max-height: 200px;
+        width: auto;
+        margin-bottom: 2rem;
+    `;
+    
+    // Create instructions
+    const instructions = document.createElement('div');
+    instructions.style.cssText = `
+        text-align: center;
+        font-family: 'Determination', sans-serif;
+        font-size: 1.5rem;
+        color: #333;
+    `;
+    instructions.innerHTML = '<p>Press any key or click Start to begin!</p>';
+    
+    // Add elements to overlay
+    logoOverlay.appendChild(logoImg);
+    logoOverlay.appendChild(instructions);
+    
+    // Add overlay to game container
+    gameContainer.appendChild(logoOverlay);
+    
+    console.log('Logo overlay created');
+}
+
+function removeLogoOverlay() {
+    const logoOverlay = document.getElementById('logo-overlay');
+    if (logoOverlay) {
+        logoOverlay.style.opacity = '0';
+        setTimeout(() => {
+            if (logoOverlay.parentNode) {
+                logoOverlay.parentNode.removeChild(logoOverlay);
+            }
+        }, 500); // Wait for fade out animation
+    }
 }
 
 // Sound effects system
@@ -710,6 +798,9 @@ class WhackAMoleGame {
     }
 
     start() {
+        // Remove logo overlay when game starts
+        removeLogoOverlay();
+        
         // Prevent starting if game is already running and not paused
         if (gameState.running && !gameState.paused) {
             console.log('Game is already running!');
@@ -756,6 +847,8 @@ class WhackAMoleGame {
         getDifficultySettings();
         
         console.log('Game started - Use A-F keys - Green moles: +10 pts, Red moles: -20 pts!');
+        
+        // Scenery bunnies are always visible
         
         // Start background music (only if not already playing)
         if (gameState.backgroundMusic) {
@@ -875,6 +968,9 @@ class WhackAMoleGame {
         this.moles.forEach(mole => {
             mole.isVisible = false;
             mole.isHit = false;
+            mole.isAnimating = false;
+            mole.animationProgress = 0;
+            mole.y = mole.baseY; // Reset to base position
             if (mole.visibilityTimer) {
                 clearTimeout(mole.visibilityTimer);
                 mole.visibilityTimer = null;
@@ -887,6 +983,8 @@ class WhackAMoleGame {
             mole.isBashAnimating = false;
             mole.bashFrame = 0;
         });
+        
+        // Scenery bunnies remain visible during reset
         
         console.log('Game reset - Press Start to begin');
         
@@ -1136,6 +1234,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize scenery bunnies
     initializeSceneryBunnies();
     
+    // Create logo overlay
+    createLogoOverlay();
+    
     const canvas = document.getElementById('game-canvas');
     const game = new WhackAMoleGame(canvas);
     
@@ -1147,6 +1248,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Keyboard controls - A-C keys to hit moles
     document.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
+        const logoOverlay = document.getElementById('logo-overlay');
+        
+        // If logo overlay is visible, remove it and start game
+        if (logoOverlay) {
+            removeLogoOverlay();
+            game.start();
+            e.preventDefault();
+            return;
+        }
+        
+        // Handle game controls only if logo overlay is not present
         if (['a', 'b', 'c'].includes(key)) {
             game.handleKeyPress(key);
             e.preventDefault();

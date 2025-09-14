@@ -52,43 +52,6 @@ body {
     flex-direction: column;
 }
 
-/* Header with wavy line */
-.header {
-    font-family: 'Arcade', sans-serif;
-    position: relative;
-    background-color: #f5f5f5;
-    padding: 0;
-    border-bottom: 2px solid #333;
-    height: 110px;
-}
-
-.nav {
-    text-align: center;
-    font-size: 1.2rem;
-    margin-top: 0.5rem;
-    margin-bottom: 0.5rem;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.nav a {
-    color: #333;
-    text-decoration: none;
-    margin: 0 0.5rem;
-}
-
-.nav a:hover {
-    text-decoration: underline;
-}
-
-.logo {
-    max-height: 100px;
-    width: auto;
-    display: block;
-    margin: 0 auto;
-}
 
 /* Wavy line visualization */
 .wave-container {
@@ -116,8 +79,8 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    height: calc(100vh - 110px);
-    min-height: calc(100vh - 110px);
+    height: 100vh;
+    min-height: 100vh;
     padding: 0;
     flex: 1;
 }
@@ -132,7 +95,7 @@ body {
 /* Game container */
 .game-container {
     width: 100%;
-    height: calc(100vh - 110px);
+    height: 100vh;
     max-width: none;
     background-color: #fff;
     border: 2px solid #333;
@@ -247,7 +210,7 @@ body {
 @media (max-width: 768px) {
     .game-container {
         width: 100%;
-        height: calc(100vh - 110px);
+        height: 100vh;
         max-width: none;
     }
     
@@ -261,9 +224,10 @@ body {
     
     .main-content {
         padding: 0;
-        height: calc(100vh - 110px);
-        min-height: calc(100vh - 110px);
+        height: 100vh;
+        min-height: 100vh;
     }
+    
     
     .controls-overlay {
         top: 0.5rem;
