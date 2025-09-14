@@ -42,7 +42,7 @@ class AccelerationDataSource(DataSource):
     
     async def read(self) -> Dict[str, float]:
         """Generate realistic 3-axis acceleration data"""
-        await asyncio.sleep(0.1)  # 10Hz data rate
+        await asyncio.sleep(0.016)  # Match 60Hz data rate
         
         current_time = time.time() - self.start_time
         
@@ -96,19 +96,25 @@ class DashboardPeakAdapter:
         
         # Override the on_peak method to capture peaks
         original_on_peak = self.peak_detector.on_peak
-        def capture_peak():
+        def capture_peak(sample=None):
             if self.magnitude_source.latest_data:
                 peak_data = self.magnitude_source.latest_data.copy()
-                magnitude = math.sqrt(peak_data['ax']**2 + peak_data['ay']**2 + peak_data['az']**2)
-                peak_data['magnitude'] = round(magnitude, 3)
+                # Magnitude already calculated in latest_data
+                peak_data['magnitude'] = round(math.sqrt(peak_data['ax']**2 + peak_data['ay']**2 + peak_data['az']**2), 3)
                 peak_data['peak_type'] = 'magnitude'
                 self.detected_peaks.append(peak_data)
                 
                 if self.peak_callback:
                     self.peak_callback(peak_data)
             
-            # Call original method
-            original_on_peak()
+            # Call original method (handle both old and new signatures)
+            if sample is not None:
+                try:
+                    original_on_peak(sample)
+                except TypeError:
+                    original_on_peak()
+            else:
+                original_on_peak()
         
         self.peak_detector.on_peak = capture_peak
         
@@ -141,14 +147,19 @@ class DashboardPeakAdapter:
         self.peak_detector.sensitivity = value
 
 # Global data storage and async components
-acceleration_data = deque(maxlen=100)
+acceleration_data = deque(maxlen=1000)  # Store more data for smooth 60Hz operation
 peak_detector: Optional[DashboardPeakAdapter] = None
 data_source: Optional[AccelerationDataSource] = None
 loop = None
+data_thread = None
 
 def start_async_data_collection():
     """Start async data collection in background thread"""
-    global peak_detector, data_source, loop
+    global peak_detector, data_source, loop, data_thread
+    
+    # Don't start multiple threads
+    if data_thread and data_thread.is_alive():
+        return
     
     def run_async_loop():
         global loop
@@ -161,7 +172,7 @@ def start_async_data_collection():
                 try:
                     data_point = await peak_detector.tick()
                     acceleration_data.append(data_point)
-                    await asyncio.sleep(0.1)  # 10Hz data rate
+                    await asyncio.sleep(0.016)  # ~60Hz data rate for smooth updates
                 except Exception as e:
                     print(f"❌ Error in data collection: {e}")
                     import traceback
@@ -182,8 +193,8 @@ def start_async_data_collection():
     peak_detector.set_peak_callback(on_peak_detected)
     
     # Start background thread
-    thread = threading.Thread(target=run_async_loop, daemon=True)
-    thread.start()
+    data_thread = threading.Thread(target=run_async_loop, daemon=True)
+    data_thread.start()
 
 def stop_async_data_collection():
     """Stop async data collection"""
@@ -197,12 +208,27 @@ def dashboard():
     """Main dashboard page"""
     return render_template('dashboard.html')
 
-@app.route('/api/data')
+@app.route('/api/data/latest')
 def get_latest_data():
     """Get the latest data point"""
     if acceleration_data:
         return jsonify(acceleration_data[-1])
-    return jsonify({'error': 'No data available'})
+    return jsonify({'error': 'No data available', 'timestamp': 0})
+
+@app.route('/api/data/since/<timestamp>')
+def get_data_since(timestamp):
+    """Get all data points since a given timestamp - handles variable rates"""
+    try:
+        timestamp = float(timestamp)
+    except (ValueError, TypeError):
+        timestamp = 0.0
+        
+    if not acceleration_data:
+        return jsonify([])
+    
+    # Find all points newer than the given timestamp
+    new_points = [d for d in acceleration_data if d.get('timestamp', 0) > timestamp]
+    return jsonify(new_points[-100:])  # Limit to last 100 to prevent huge responses
 
 @app.route('/api/data/history')
 def get_data_history():
@@ -305,8 +331,7 @@ if __name__ == '__main__':
     print("📊 Dashboard available at: http://localhost:8080")
     print("🔍 Features: Async data generation, real-time peak detection, interactive visualization")
     
-    # Start async data collection
-    start_async_data_collection()
+    # Don't auto-start, let client control via API
     
     try:
         app.run(host='0.0.0.0', port=8080, debug=True, threaded=True)
