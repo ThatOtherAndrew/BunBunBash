@@ -36,6 +36,13 @@ const bashImages = {
 const sceneryImages = {
     bunny1: null,
     bunny2: null,
+    bunny3: null,
+    loading: true
+};
+
+const soundEffects = {
+    bonk: null,
+    buzzer: null,
     loading: true
 };
 
@@ -49,9 +56,12 @@ function loadImages() {
     const bashFrame2Img = new Image();
     const sceneryBunny1Img = new Image();
     const sceneryBunny2Img = new Image();
+    const sceneryBunny3Img = new Image();
+    const bonkAudio = new Audio();
+    const buzzerAudio = new Audio();
     
     let loadedCount = 0;
-    const totalImages = 8; // Loading 8 images now (good, bad, background, bottom overlay, bash frames, scenery)
+    const totalImages = 11; // Loading 11 items now (good, bad, background, bottom overlay, bash frames, scenery, sound effects)
     const checkAllLoaded = () => {
         loadedCount++;
         if (loadedCount === totalImages) {
@@ -59,7 +69,8 @@ function loadImages() {
             backgroundImages.loading = false;
             bashImages.loading = false;
             sceneryImages.loading = false;
-            console.log('All images loaded');
+            soundEffects.loading = false;
+            console.log('All images and sounds loaded');
         }
     };
     
@@ -103,6 +114,21 @@ function loadImages() {
         checkAllLoaded();
     };
     
+    sceneryBunny3Img.onload = () => {
+        sceneryImages.bunny3 = sceneryBunny3Img;
+        checkAllLoaded();
+    };
+    
+    bonkAudio.oncanplaythrough = () => {
+        soundEffects.bonk = bonkAudio;
+        checkAllLoaded();
+    };
+    
+    buzzerAudio.oncanplaythrough = () => {
+        soundEffects.buzzer = buzzerAudio;
+        checkAllLoaded();
+    };
+    
     // Set image sources
     goodImg.src = '/static/images/good-mole.png';
     badImg.src = '/static/images/bad-mole.png';
@@ -110,8 +136,11 @@ function loadImages() {
     bottomOverlayImg.src = '/static/images/holes_bottom_overlay.png';
     bashFrame1Img.src = '/static/images/bash_animation_1.png';
     bashFrame2Img.src = '/static/images/bash_animation_2.png';
-    sceneryBunny1Img.src = '/static/images/bunny1.gif';
-    sceneryBunny2Img.src = '/static/images/bunny2.gif';
+    sceneryBunny1Img.src = '/static/images/bunnygreensit.gif';
+    sceneryBunny2Img.src = '/static/images/bunnygreenlay.gif';
+    sceneryBunny3Img.src = '/static/images/bunnygreensit.gif'; // Use bunny1.gif for bunny3 (will be flipped)
+    bonkAudio.src = '/static/audio/bonk.mp3';
+    buzzerAudio.src = '/static/audio/buzzer.mp3';
     
     // Fallback if images don't load
     goodImg.onerror = () => {
@@ -151,6 +180,21 @@ function loadImages() {
     
     sceneryBunny2Img.onerror = () => {
         console.warn('Scenery bunny2 image failed to load');
+        checkAllLoaded();
+    };
+    
+    sceneryBunny3Img.onerror = () => {
+        console.warn('Scenery bunny3 image failed to load');
+        checkAllLoaded();
+    };
+    
+    bonkAudio.onerror = () => {
+        console.warn('Bonk sound effect failed to load');
+        checkAllLoaded();
+    };
+    
+    buzzerAudio.onerror = () => {
+        console.warn('Buzzer sound effect failed to load');
         checkAllLoaded();
     };
 }
@@ -292,10 +336,14 @@ class Mole {
             // Award or deduct points based on mole type
             if (this.isGoodMole) {
                 gameState.score += 10;
+                // Play bonk sound for good bunny hits
+                playSoundEffect('bonk');
             } else {
                 gameState.score -= 20;
                 // Trigger red flash for bad bunny hits
                 triggerRedFlash();
+                // Play buzzer sound for bad bunny hits
+                playSoundEffect('buzzer');
             }
             
             // Hide after bash animation completes
@@ -432,7 +480,7 @@ class Mole {
 function initializeBackgroundMusic() {
     gameState.backgroundMusic = new Audio('/static/audio/germany-bavarian-oktoberfest-background-music-401731.mp3');
     gameState.backgroundMusic.loop = true;
-    gameState.backgroundMusic.volume = 0.3; // Set a reasonable volume
+    gameState.backgroundMusic.volume = 0.15; // Make background music quieter
     
     // Handle audio loading errors
     gameState.backgroundMusic.onerror = () => {
@@ -452,8 +500,8 @@ function initializeSceneryBunnies() {
     const bunny1 = document.createElement('img');
     bunny1.src = '/static/images/bunny1.gif';
     bunny1.style.position = 'absolute';
-    bunny1.style.width = '100px';
-    bunny1.style.height = '100px';
+    bunny1.style.width = '140px';
+    bunny1.style.height = '140px';
     bunny1.style.pointerEvents = 'none';
     bunny1.style.zIndex = '10';
     bunny1.id = 'scenery-bunny1';
@@ -462,18 +510,34 @@ function initializeSceneryBunnies() {
     const bunny2 = document.createElement('img');
     bunny2.src = '/static/images/bunny2.gif';
     bunny2.style.position = 'absolute';
-    bunny2.style.width = '100px';
-    bunny2.style.height = '100px';
+    bunny2.style.width = '180px';
+    bunny2.style.height = '180px';
     bunny2.style.pointerEvents = 'none';
     bunny2.style.zIndex = '10';
+    bunny2.style.transform = 'scaleX(-1)'; // Horizontal flip
     bunny2.id = 'scenery-bunny2';
+    
+    // Create bunny3 element (horizontally flipped version of bunny1)
+    const bunny3 = document.createElement('img');
+    bunny3.src = '/static/images/bunny1.gif';
+    bunny3.style.position = 'absolute';
+    bunny3.style.width = '160px';
+    bunny3.style.height = '160px';
+    bunny3.style.pointerEvents = 'none';
+    bunny3.style.zIndex = '10';
+    bunny3.style.transform = 'scaleX(-1)'; // Horizontal flip
+    bunny3.id = 'scenery-bunny3';
     
     // Add to container
     gameContainer.appendChild(bunny1);
     gameContainer.appendChild(bunny2);
+    gameContainer.appendChild(bunny3);
     
     // Position the bunnies
     updateSceneryBunniesPosition();
+    
+    // Show scenery bunnies initially
+    showSceneryBunnies();
     
     console.log('Scenery bunnies initialized');
 }
@@ -481,8 +545,9 @@ function initializeSceneryBunnies() {
 function updateSceneryBunniesPosition() {
     const bunny1 = document.getElementById('scenery-bunny1');
     const bunny2 = document.getElementById('scenery-bunny2');
+    const bunny3 = document.getElementById('scenery-bunny3');
     
-    if (!bunny1 || !bunny2) return;
+    if (!bunny1 || !bunny2 || !bunny3) return;
     
     const container = document.querySelector('.game-container');
     if (!container) return;
@@ -492,12 +557,36 @@ function updateSceneryBunniesPosition() {
     const containerWidth = rect.width;
     
     // Position bunny1 on the right side
-    bunny1.style.left = (containerWidth * 0.66) + 'px';
-    bunny1.style.bottom = '50px';
+    bunny1.style.left = (containerWidth * 0.89) + 'px';
+    bunny1.style.bottom = '400px';
     
     // Position bunny2 on the left side
-    bunny2.style.left = (containerWidth * 0.25) + 'px';
-    bunny2.style.bottom = '20px';
+    bunny2.style.left = (containerWidth * 0.65) + 'px';
+    bunny2.style.bottom = '5px';
+    
+    // Position bunny3 in the center (horizontally flipped)
+    bunny3.style.left = (containerWidth * 0.27) + 'px';
+    bunny3.style.bottom = '25px';
+}
+
+function hideSceneryBunnies() {
+    const bunny1 = document.getElementById('scenery-bunny1');
+    const bunny2 = document.getElementById('scenery-bunny2');
+    const bunny3 = document.getElementById('scenery-bunny3');
+    
+    if (bunny1) bunny1.style.display = 'none';
+    if (bunny2) bunny2.style.display = 'none';
+    if (bunny3) bunny3.style.display = 'none';
+}
+
+function showSceneryBunnies() {
+    const bunny1 = document.getElementById('scenery-bunny1');
+    const bunny2 = document.getElementById('scenery-bunny2');
+    const bunny3 = document.getElementById('scenery-bunny3');
+    
+    if (bunny1) bunny1.style.display = 'block';
+    if (bunny2) bunny2.style.display = 'block';
+    if (bunny3) bunny3.style.display = 'block';
 }
 
 function updateMusicSpeed() {
@@ -547,6 +636,95 @@ function triggerRedFlash() {
     }
     
     animateFlash();
+}
+
+// Logo overlay system
+function createLogoOverlay() {
+    const gameContainer = document.querySelector('.game-container');
+    if (!gameContainer) return;
+    
+    // Create logo overlay
+    const logoOverlay = document.createElement('div');
+    logoOverlay.id = 'logo-overlay';
+    logoOverlay.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(245, 245, 245, 0.95);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        transition: opacity 0.5s ease-out;
+    `;
+    
+    // Create logo image
+    const logoImg = document.createElement('img');
+    logoImg.src = '/static/images/bunbunbash.png';
+    logoImg.alt = 'Bun Bun Bash';
+    logoImg.style.cssText = `
+        max-height: 200px;
+        width: auto;
+        margin-bottom: 2rem;
+    `;
+    
+    // Create instructions
+    const instructions = document.createElement('div');
+    instructions.style.cssText = `
+        text-align: center;
+        font-family: 'Determination', sans-serif;
+        font-size: 1.5rem;
+        color: #333;
+    `;
+    instructions.innerHTML = '<p>Press any key or click Start to begin!</p>';
+    
+    // Add elements to overlay
+    logoOverlay.appendChild(logoImg);
+    logoOverlay.appendChild(instructions);
+    
+    // Add overlay to game container
+    gameContainer.appendChild(logoOverlay);
+    
+    console.log('Logo overlay created');
+}
+
+function removeLogoOverlay() {
+    const logoOverlay = document.getElementById('logo-overlay');
+    if (logoOverlay) {
+        logoOverlay.style.opacity = '0';
+        setTimeout(() => {
+            if (logoOverlay.parentNode) {
+                logoOverlay.parentNode.removeChild(logoOverlay);
+            }
+        }, 500); // Wait for fade out animation
+    }
+}
+
+// Sound effects system
+function playSoundEffect(soundName) {
+    if (soundEffects.loading || !soundEffects[soundName]) {
+        console.warn(`Sound effect ${soundName} not loaded yet`);
+        return;
+    }
+    
+    try {
+        // Clone the audio to allow overlapping sounds
+        const audio = soundEffects[soundName].cloneNode();
+        // Set different volumes for different sounds
+        if (soundName === 'bonk') {
+            audio.volume = 1.0; // Make bonk quite loud
+        } else {
+            audio.volume = 0.4; // Make buzzer quieter
+        }
+        audio.play().catch(e => {
+            console.warn(`Could not play sound effect ${soundName}:`, e);
+        });
+    } catch (error) {
+        console.warn(`Error playing sound effect ${soundName}:`, error);
+    }
 }
 
 // Difficulty progression system
@@ -620,6 +798,9 @@ class WhackAMoleGame {
     }
 
     start() {
+        // Remove logo overlay when game starts
+        removeLogoOverlay();
+        
         // Prevent starting if game is already running and not paused
         if (gameState.running && !gameState.paused) {
             console.log('Game is already running!');
@@ -666,6 +847,8 @@ class WhackAMoleGame {
         getDifficultySettings();
         
         console.log('Game started - Use A-F keys - Green moles: +10 pts, Red moles: -20 pts!');
+        
+        // Scenery bunnies are always visible
         
         // Start background music (only if not already playing)
         if (gameState.backgroundMusic) {
@@ -748,7 +931,7 @@ class WhackAMoleGame {
             
             if (currentStep >= fadeSteps || gameState.backgroundMusic.volume <= 0) {
                 gameState.backgroundMusic.pause();
-                gameState.backgroundMusic.volume = 0.3; // Reset volume for next game
+                gameState.backgroundMusic.volume = 0.15; // Reset volume for next game
                 clearInterval(fadeInterval);
             }
         }, stepDuration);
@@ -785,6 +968,9 @@ class WhackAMoleGame {
         this.moles.forEach(mole => {
             mole.isVisible = false;
             mole.isHit = false;
+            mole.isAnimating = false;
+            mole.animationProgress = 0;
+            mole.y = mole.baseY; // Reset to base position
             if (mole.visibilityTimer) {
                 clearTimeout(mole.visibilityTimer);
                 mole.visibilityTimer = null;
@@ -797,6 +983,8 @@ class WhackAMoleGame {
             mole.isBashAnimating = false;
             mole.bashFrame = 0;
         });
+        
+        // Scenery bunnies remain visible during reset
         
         console.log('Game reset - Press Start to begin');
         
@@ -1046,6 +1234,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize scenery bunnies
     initializeSceneryBunnies();
     
+    // Create logo overlay
+    createLogoOverlay();
+    
     const canvas = document.getElementById('game-canvas');
     const game = new WhackAMoleGame(canvas);
     
@@ -1057,6 +1248,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Keyboard controls - A-C keys to hit moles
     document.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
+        const logoOverlay = document.getElementById('logo-overlay');
+        
+        // If logo overlay is visible, remove it and start game
+        if (logoOverlay) {
+            removeLogoOverlay();
+            game.start();
+            e.preventDefault();
+            return;
+        }
+        
+        // Handle game controls only if logo overlay is not present
         if (['a', 'b', 'c'].includes(key)) {
             game.handleKeyPress(key);
             e.preventDefault();
